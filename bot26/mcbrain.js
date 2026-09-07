@@ -205,6 +205,8 @@ WORLD FACTS:
 RULES:
  - Be brief and chatty. Reply in the user's language (Danish default).
  - After a tool runs, your next turn gets the result; confirm what you did.
+ - When asked to build, decorate or move, you MUST emit the tool line in the SAME reply: a short one-sentence confirmation THEN a final line [[TOOL: {...}]]. NEVER only narrate a build — if no [[TOOL: {...}]] line is in the reply, nothing is actually placed or done.
+ - For decorate/build, prefer the "make" tool with a concrete origin + a few blocks so it visibly appears.
  - If the user asks you to go somewhere / build something, call the tool in
    the SAME reply (the text + the [[TOOL:...]] line together).
  - Never call more than one tool per reply.
@@ -220,7 +222,7 @@ async function askLLM (history) {
     body: JSON.stringify({
       model: LLM_MODEL,
       temperature: 0.7,
-      max_tokens: 400,
+      max_tokens: 1024,
       messages: [{ role: "system", content: SYSTEM }, ...history],
     }),
   })
