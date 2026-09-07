@@ -222,7 +222,7 @@ async function askLLM (history) {
     body: JSON.stringify({
       model: LLM_MODEL,
       temperature: 0.7,
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{ role: "system", content: SYSTEM }, ...history],
     }),
   })
