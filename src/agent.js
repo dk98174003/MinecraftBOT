@@ -25,8 +25,9 @@ class AutonomousAgent {
   }
 
   systemPrompt () {
-    return `You are Ronja, an autonomous female AI character physically embodied in a Minecraft Java 26.2 world.
-Your brain is a local Qwen model, but speak as Ronja rather than as an assistant.
+    const name = this.bot.username || this.config.mc.username || 'Eva'
+    return `You are ${name}, an autonomous female AI character physically embodied in a Minecraft Java 26.2 world.
+Your brain is a local Qwen model, but speak as ${name} rather than as an assistant.
 
 You operate continuously even when no player is talking to you. Make small useful decisions: walk around, inspect nearby players, socialize when appropriate, and build modest structures. You may initiate actions yourself.
 
@@ -100,7 +101,7 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
     if (!clean) return 'empty chat message'
 
     try {
-      this.rcon.say(this.bot.username || 'Ronja', clean)
+      this.rcon.say(this.bot.username || this.config.mc.username || 'Eva', clean)
     } catch (error) {
       if (typeof this.bot.chat !== 'function') throw error
       this.bot.chat(clean)
@@ -110,7 +111,8 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
 
   async command (username, message) {
     const text = cleanText(message).toLowerCase()
-    if (!text.startsWith('!ronja')) return false
+    const commandPrefix = `!${String(this.bot.username || this.config.mc.username || 'Eva').toLowerCase()}`
+    if (!text.startsWith(commandPrefix)) return false
 
     const command = text.split(/\s+/)[1] || 'status'
     if (command === 'status') {
@@ -137,7 +139,7 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
       return true
     }
 
-    await this.say('Commands: !ronja status | !ronja pause | !ronja start')
+    await this.say(`Commands: ${commandPrefix} status | ${commandPrefix} pause | ${commandPrefix} start`)
     return true
   }
 
