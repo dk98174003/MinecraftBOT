@@ -1,118 +1,190 @@
-# MinecraftBOT
+# MinecraftBOT — Ronja autonomous AI agent
 
-Kode og viden til Minecraft-setuppet på RPI5CM (192.168.0.219).
+Ronja is an autonomous female Minecraft character that lives inside the
+Minecraft world, walks around with a real Mineflayer body, talks to players,
+remembers useful facts, and builds structures.
 
-To separate systemer:
+Her planner is the local Qwen service at:
 
-1. **`bot26/`** — Ronja: Mineflayer-bot (username `Ronja`) der render i spillet og svarer i chatten via LLM. Kører som systemd-service på RPI5CM fra `/data/minecraft-bot26/`.
-2. **`rcon-agents/`** — RCON-byggeagenter (Python) der bygger strukturer server-side via `rcon-cli` (`fill`/`setblock`). Kører ad hoc på RPI5CM fra `/data/minecraft-bot/`.
-
-## Server
-
-- Minecraft Java **26.2** (custom "complexity"-server), Docker-container `minecraft` på RPI5CM.
-- LAN-only, port 25565 (bot) / RCON 25575.
-- `online-mode=false` (offline-mode, mineflayer logges ind med bare username).
-- RCON-adgang: `grep ^rcon.password /data/server.properties` i containeren.
-
-## bot26/ (Ronja)
-
-- `mcbrain.js` — hovedfilen. Mineflayer-bot + LLM-loop:
-  - Modtager chat fra spillere, sender til LLM (via API),
-  - LLM kan kalde værktøjer: `make` (RCON setblock, op til 400 blokke), `tp`/`follow` (teleport via RCON), `clear`.
-  - `spawnBot()` resawner ved kink/disconnect.
-- `bot.js`, `chat.js`, `roofbot.js`, `test.js` — tidligere/eksperimentelle varianter.
-- `package.json` — bruger **custom fork af mineflayer** (`4.37.1+complexity.26.2.3`), installeret fra `mf262.tgz` (ligger i `/data/minecraft-bot26/` på RPI5CM, ikke i repoet — 340 KB binary).
-- Kører som systemd-service: `mcbrain.service` (root unit på RPI5CM). Restart: `sudo systemctl restart mcbrain.service`.
-
-## bot26/ (Ronja) — AI-meldingstræk (hvordan messagerne virker)
-
-Arkitektur i `mcbrain.js` (verificeret mod live-serveren 2026-09-07):
-
-```
-Spiller-Chat ──▶ mineflayer "message"/"chat" ──▶ handleUser()
-                                                    │
-                       ┌────────────────────────────┤
-                       ▼ (regex-match)              ▼
-             Deterministisk "follow"        askLLM() → qwen38-27b
-             RCON `execute as @s`          (OpenAI-compatible,
-             tp Ronja ~ ~ ~                 gx10 192.168.0.65:8000/v1)
-                                                    │
-                                                    ▼
-                                        parseTool(): [[TOOL: {...}]]-linje
-                                        + stripTool() (ren tekst)
-                                                    │
-                              ┌─────────────────────┤
-                              ▼ (værktøj)           ▼ (ingen)
-                       runTool() (RCON)          say() = RCON tellraw
-                              │
-                              ▼
-                       2. LLM-turn: bekræft resultat
-                              │
-                              ▼
-                          say() → tellraw @a
+```text
+http://192.168.0.65:8000/v1
 ```
 
-Vigtige detaljer:
+The default model is `qwen38-27b`, configurable in `.env`.
 
-1. **Chat-opsamling**: mineflayer `bot.on("message", onChat)` og `bot.on("chat", onChat)` (26.2 bruger `message`). 3. argument er en UUID; spillernavnet er `<Name>`-prefixet i strengen. Regex `^<([^>]+)> ?(.*)$` splitter displayname fra payload.
-2. **Filtering af systembeskeder**: beskeder der starter med `[` eller `!` ignoreres (vores egne `tp`/`tellraw`, join-messages).
-3. **Debounce**: `SAY_DEBOUNCE = 5000` ms pr. bruger — undgår spam-loop.
-4. **Deterministisk "follow" før LLM**: regex `FOLLOW_RE` matcher "come to me / follow / meet me / kom til mig / ..." og udfører straks `execute as @a[name=<user>] at @s run tp Ronja ~ ~ ~` uden at spørge LLM'en. Besvarer med "Kommer med det samme — på vejen til dig."
-5. **LLM-call**: `fetch(LLM_BASE + "/chat/completions")`, `Authorization: Bearer <randomUUID>` (gx10'ets gateway ignorerer tokenet). `temperature: 0.7, max_tokens: 400`. Historik: ringbuffert op til 16 beskedter.
-6. **Værktøjskontrakt**: LLM'en skal afslutte med en linje `[[TOOL: {...}]]` (senst i beskeden vinder). `parseTool()` finder dem, `stripTool()` fjerner dem fra den synlige tekst. Værktøjer: `tp`, `follow`, `make` (op til 400 blokke, hvitlister af blokke, partiet 40 RCON-batcher), `clear`. Maks 1 værktøj pr. besked.
-7. **Svar-kanal = RCON `tellraw`, IKKE bot-chat**: klienten forlader botten usignede `[Not Secure]`-chat, så alle svar går via `tellraw @a [aqua "Ronja: ", tekst]` (system-chat, vises altid).
-8. **Værktøjsbekræftelse**: efter `runTool()` kaldes LLM'en igen med system-besked "Tool result: ..." + user "Confirm to the user what just happened, one short sentence" → den korte bekræftelse sendes via `say()`.
-9. **Spawns/reconnect**: `spawnBot()` resawner ved `end` efter 5s; parkerer ved nordøst-tårnet (54,108,34) så brugeren kan finde botten.
+## What changed
 
-## rcon-agents/
+This repository is now one coherent agent rather than a collection of
+experimental bots and one-off RCON build scripts.
 
-- `castle_agent.py` — byggede slottet ved c(60,94,40) (y=100, tag y=102, tårne op til y=107).
-- `mcdonalds.py` — McDonald's-byg.
-- `castle_flat.py`, `castle_gen.py`, `castle_outer.py` — varianter/generators.
-- `render_castle.py` — renderer slot til `castle.png`.
-- Flow: Python → `docker exec minecraft rcon-cli --host 127.0.0.1 --port 25575 --password <pw> "fill ..."`.
+The old `bot26/` experiments and `rcon-agents/` utilities were removed from the
+current tree. Their history remains available in Git if an old build script ever
+needs to be recovered.
 
-## 26.2-fork: API-erfundinger (verificeret 2026-09-07)
+## Capabilities
 
-Forken (`mineflayer 4.37.1+complexity.26.2.3`) adskiller sig fra vanilla mineflayer:
+Ronja can:
 
-- **Block-positions er plain objects** `{x,y,z}` uden Vec3-metoder. `Vec3` er eksporterede og kan bruges til at pakke positioner.
-- `bot.blockAt(x,y,z)` virker (sync), men `bot.findBlock(...)` kan returne null — brug `blockAt` på eksakte koordinater.
-- **Bevægelse** (`setControlState`/`lookAt`/`moveState`): ✅ virker.
-- **Digging** (`bot.dig(block, ...)`): ✅ virker — forudsætter at block-positionen er en `Vec3` (pak den: `Object.assign({}, block, {position: new Vec3(...)})`).
-- **Equip** (`bot.equip(item)`): ✅ virker — item skal have `slot`-felt (tag det ud af `bot.inventory.slots`, `Object.assign({}, s, {slot: i})`).
-- **Blokplacering**: ✅ **FIXET 2026-09-07** — `bot.placeBlock(referenceBlock, faceVector)` virker nu end-to-end mod vanilla 26.2.
-  - **Årsag**: forkens 26.2 `toServer`-mapper i `minecraft-data` var forskyvet med 1 i halen (mangled `teleport_to_entity` @ 0x40, og `spectate`/`swing` var byttet om) → `block_place` blev sendt som **0x41**, som serveren decoder som `test_instance_block_action` → decode-kick.
-  - **Fix** (i data-laget, IKKE i `mineflayer/lib/plugins/generic_place.js`): omskrevet `play.toServer.types.mapper`-halen i `node_modules/minecraft-data/minecraft-data/data/pc/26.2/protocol.json` til vanilla protocol 776:
-    ```
-    0x3e spectator_action
-    0x3f arm_animation
-    0x40 teleport_to_entity
-    0x41 test_instance_block_action
-    0x42 block_place   (USE_ITEM_ON)
-    0x43 use_item
-    0x44 custom_click_action
-    ```
-    + to tilføjte type-schemaer (`teleport_to_entity` = uuid; `custom_click_action` = identifier + nbt).
-  - Backup: `protocol.json.preplacefix-` (samme mappe).
-  - **Opmærksomhed**: 2. argument er en **retnings-Vec3** (faceVector), IKKE destination: `dest = referenceBlock.position + faceVector`. Fx. for at placere i +x-retning: `bot.placeBlock(support, new Vec3(1,0,0))`.
-  - Verificeret live: `block_place` serialiserer nu med leading varint **0x42**, og et probe-script vendte et air-slot til stone på den rigtige server.
-- Inventory: `bot.inventory.slots` (object, indekser som strings). Item-navne kan komme som `minecraft:stone` eller `stone`.
-- `rcon-cli` syntax på RPI5CM: `rcon-cli --host 127.0.0.1 --port 25575 --password <pw> "<cmd>"` (ikke `-p`).
+- operate continuously without a human driver;
+- listen to normal player chat and decide when to respond;
+- physically walk toward coordinates or visible players;
+- wander and explore autonomously;
+- look at players and jump over simple obstacles;
+- use persistent local memory across restarts;
+- build small platforms, walls, towers, huts, bridges, and LLM-defined shapes;
+- report action failures back to Qwen and adapt on the next planning cycle;
+- reconnect automatically after disconnects.
 
-## Byggete (i verdenen)
+Building uses RCON because it is the most reliable construction path on the
+custom Minecraft 26.2 server. Normal movement is not teleport-based: the
+Mineflayer avatar actually walks.
 
-- Slot: c(60,94,40), y=100–107.
-- Pink dobbeltseng (Knud byggede den til botten): c(69-70,101,42-43).
-- Monument/lantern-tower (70,20) y=99 — står permanent ("this is your world", 2026-09-06).
+## Safety boundaries
 
-## Opsætning af bot26 fra bunden
+Qwen is **not** allowed to execute shell commands or arbitrary JavaScript.
+It chooses from a fixed action contract enforced by `src/agent.js`.
 
-1. `scp mf262.tgz` til mål (fra RPI5CM).
-2. `npm install` derefter `npm install ./mf262.tgz` (fork erstatter mineflayer).
-3. **Gentag `placeBlock`-packet-ID-fixet** (se ovenfor): efter en frisk install er
-   `minecraft-data/.../pc/26.2/protocol.json` igen forskyvet i halen. Genskriv
-   `play.toServer.types.mapper` til vanilla 776-halen (0x41/0x42/0x43/0x44) + tilføj
-   `teleport_to_entity`/`custom_click_action`-schemaer — ellers giver
-   `bot.placeBlock()` decode-kick.
-4. `systemctl start mcbrain.service`.
+Additional guardrails include:
+
+- no destructive/griefing action exposed to the model;
+- build block whitelist;
+- maximum build size;
+- builds must be close to Ronja's physical position;
+- movement has per-action time and drop-safety limits;
+- administrative pause/resume commands can be restricted to named users.
+
+## Repository layout
+
+```text
+src/
+  index.js       Minecraft connection, events, reconnect
+  agent.js       autonomous planning loop and action dispatcher
+  llm.js         Qwen/OpenAI-compatible API client
+  world.js       compact Minecraft world snapshot
+  movement.js    embodied walking/jump/navigation primitives
+  building.js    guarded RCON builder and presets
+  rcon.js        safe docker/rcon-cli wrapper
+  memory.js      persistent local memory
+
+scripts/
+  bootstrap.sh   installs the custom 26.2 Mineflayer fork + dependencies
+
+deploy/
+  minecraftbot.service
+
+docs/
+  ARCHITECTURE.md
+  OPERATIONS.md
+```
+
+## Requirements
+
+- Node.js 20+
+- the custom Minecraft 26.2 Mineflayer fork (`mf262.tgz`)
+- Minecraft server reachable on port 25565
+- Docker/RCON access on the Minecraft host for chat/build actions
+- Qwen endpoint reachable at `192.168.0.65:8000`
+
+The current server is offline-mode, so the default username is `Ronja` with
+`MC_AUTH=offline`.
+
+## Install on RPI5CM
+
+```bash
+git clone https://github.com/dk98174003/MinecraftBOT.git
+cd MinecraftBOT
+
+cp .env.example .env
+./scripts/bootstrap.sh
+npm start
+```
+
+`bootstrap.sh` automatically looks for the existing custom fork at:
+
+```text
+/data/minecraft-bot26/mf262.tgz
+```
+
+You can instead point to another copy:
+
+```bash
+export MINEFLAYER_FORK_TGZ=/path/to/mf262.tgz
+./scripts/bootstrap.sh
+```
+
+## Configuration
+
+Important defaults in `.env.example`:
+
+```dotenv
+MC_HOST=127.0.0.1
+MC_PORT=25565
+MC_USERNAME=Ronja
+MC_AUTH=offline
+MC_VERSION=26.2
+
+LLM_BASE_URL=http://192.168.0.65:8000/v1
+LLM_MODEL=qwen38-27b
+LLM_API_KEY=EMPTY
+
+AGENT_AUTONOMOUS=true
+AGENT_TICK_MS=5000
+AGENT_ADMIN_USERS=dk98174003
+
+RCON_ENABLED=true
+RCON_CONTAINER=minecraft
+RCON_HOST=127.0.0.1
+RCON_PORT=25575
+```
+
+Do not put passwords in Git. If `RCON_PASSWORD` is blank, the process searches
+the known `server.properties` locations for `rcon.password`.
+
+## How autonomy works
+
+Every planning cycle Ronja gives Qwen a compact state containing:
+
+- position, health, food, time, and weather;
+- nearby visible players;
+- inventory summary;
+- nearby block information;
+- recent player messages;
+- persistent notes and recent builds;
+- her current goal;
+- the concrete result of her previous action.
+
+Qwen returns a JSON plan of at most a few actions. The runtime validates and
+executes them, then the result becomes input to the next cycle.
+
+Player messages accelerate the next planning cycle, but Ronja does not depend on
+messages to act. When nobody is talking, she can still wander, build, or pursue
+her own current goal.
+
+## In-game commands
+
+```text
+!ronja status
+!ronja pause
+!ronja start
+```
+
+Normal interaction requires no command. Players can simply talk to Ronja:
+
+```text
+Ronja, come over here.
+Can you build a small tower beside me?
+What are you doing?
+Go explore the courtyard.
+```
+
+## Character / girl skin
+
+The AI persona is Ronja. The visible Minecraft skin is controlled separately by
+the account/server skin mechanism. On this offline-mode server, keep the
+username `Ronja` and assign the desired girl skin through the server-side skin
+setup.
+
+## More documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Operations and deployment](docs/OPERATIONS.md)

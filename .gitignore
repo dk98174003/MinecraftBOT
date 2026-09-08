@@ -1,4 +1,7 @@
 node_modules/
-*.tgz
-*.bak
-*.log
+.env
+agent-memory.json
+agent-memory.json.tmp
+npm-debug.log*
+vendor/*.tgz
+.DS_Store

@@ -1,0 +1,18 @@
+[Unit]
+Description=Ronja autonomous Minecraft AI agent
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/MinecraftBOT
+EnvironmentFile=/data/MinecraftBOT/.env
+ExecStart=/usr/bin/node /data/MinecraftBOT/src/index.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
