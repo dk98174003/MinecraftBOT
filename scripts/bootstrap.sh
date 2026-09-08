@@ -13,7 +13,7 @@ if [[ ! -f "$VENDOR" ]]; then
 
   for src in "${candidates[@]}"; do
     if [[ -n "$src" && -f "$src" ]]; then
-      echo "Copying Minecraft 26.2 Mineflayer fork from $src"
+      echo "Copying Minecraft 26.2 Mineflayer 4.37.1-based fork from $src"
       cp "$src" "$VENDOR"
       break
     fi
@@ -24,7 +24,7 @@ if [[ ! -f "$VENDOR" ]]; then
   cat >&2 <<'EOF'
 ERROR: vendor/mf262.tgz is missing.
 
-This server uses a custom Minecraft 26.2 Mineflayer fork.
+This server uses a custom Minecraft 26.2 fork based on Mineflayer 4.37.1.
 Provide it using either:
 
   export MINEFLAYER_FORK_TGZ=/path/to/mf262.tgz
@@ -39,6 +39,7 @@ fi
 
 cd "$ROOT"
 npm install
+npm run verify:mineflayer
 npm run check
 
 echo

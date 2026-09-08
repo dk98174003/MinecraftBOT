@@ -5,6 +5,7 @@
 The current deployment is designed for the RPI5CM Minecraft host:
 
 - Minecraft Java custom version: `26.2`
+- Mineflayer base version: `4.37.1` using the custom 26.2 fork
 - Minecraft port: `25565`
 - offline authentication
 - Docker container: `minecraft`
@@ -25,6 +26,8 @@ npm start
 
 The bootstrap script looks for the existing custom Mineflayer tarball at
 `/data/minecraft-bot26/mf262.tgz`. You can also set `MINEFLAYER_FORK_TGZ`.
+After `npm install`, bootstrap verifies that the installed Mineflayer package
+version starts with `4.37.1` before continuing.
 
 ## systemd
 
@@ -83,6 +86,12 @@ LLM:
 curl http://192.168.0.65:8000/v1/models
 ```
 
+Mineflayer package:
+
+```bash
+npm run verify:mineflayer
+```
+
 Minecraft process:
 
 ```bash
@@ -92,7 +101,10 @@ journalctl -u minecraftbot.service -n 100 --no-pager
 
 ## Protocol note
 
-The custom Mineflayer 26.2 fork is still required to connect to the server.
+The custom Minecraft 26.2 fork based on **Mineflayer 4.37.1** is required to
+connect to this server. A package version such as `4.37.1+complexity...` is
+expected and is treated as a 4.37.1-based build.
+
 This agent does not call `bot.placeBlock`, so the historical `block_place`
 packet-mapper workaround is not part of the runtime path. If physical
 inventory-based placement is added later, re-test the custom protocol mapping

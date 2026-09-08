@@ -80,10 +80,15 @@ docs/
 ## Requirements
 
 - Node.js 20+
-- the custom Minecraft 26.2 Mineflayer fork (`mf262.tgz`)
+- **Mineflayer 4.37.1**, using the custom Minecraft 26.2 fork (`mf262.tgz`)
 - Minecraft server reachable on port 25565
 - Docker/RCON access on the Minecraft host for chat/build actions
 - Qwen endpoint reachable at `192.168.0.65:8000`
+
+The custom package may report a build-metadata version such as `4.37.1+...`;
+that is still a Mineflayer 4.37.1-based build. `scripts/bootstrap.sh` verifies
+this after installation so an incompatible Mineflayer release is not used by
+mistake.
 
 The current server is offline-mode, so the default username is `Ronja` with
 `MC_AUTH=offline`.
