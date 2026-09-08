@@ -59,12 +59,13 @@ sudo systemctl restart minecraftbot.service
 
 Normal player chat is context for the autonomous agent.
 
-Administrative commands:
+The administrative command prefix is derived from `MC_USERNAME`. With
+`MC_USERNAME=Eva`:
 
 ```text
-!ronja status
-!ronja pause
-!ronja start
+!eva status
+!eva pause
+!eva start
 ```
 
 Users allowed to pause/resume autonomy are configured with
