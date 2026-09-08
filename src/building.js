@@ -29,6 +29,12 @@ function integerPoint (point) {
   return p
 }
 
+function dimension (value, name) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n) || n < 1 || n > 32) throw new Error(`${name} must be between 1 and 32`)
+  return n
+}
+
 function add (out, x, y, z) {
   out.push([x, y, z])
 }
@@ -78,6 +84,24 @@ function preset (name) {
   return out
 }
 
+function boxOffsets (width, height, depth, hollow) {
+  const w = dimension(width, 'width')
+  const h = dimension(height, 'height')
+  const d = dimension(depth, 'depth')
+  const out = []
+
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      for (let z = 0; z < d; z++) {
+        if (!hollow || x === 0 || x === w - 1 || y === 0 || y === h - 1 || z === 0 || z === d - 1) {
+          add(out, x, y, z)
+        }
+      }
+    }
+  }
+  return out
+}
+
 class Builder {
   constructor (bot, rcon, config, memory) {
     this.bot = bot
@@ -105,10 +129,12 @@ class Builder {
 
   runSetblocks (origin, material, offsets) {
     const id = blockId(material)
-    const limited = offsets.slice(0, this.config.maxBlocks)
-    if (!limited.length) throw new Error('build contains no blocks')
+    if (!offsets.length) throw new Error('build contains no blocks')
+    if (offsets.length > this.config.maxBlocks) {
+      throw new Error(`build needs ${offsets.length} blocks; limit is ${this.config.maxBlocks}`)
+    }
 
-    const commands = limited.map(([dx, dy, dz]) => {
+    const commands = offsets.map(([dx, dy, dz]) => {
       const x = origin.x + Math.round(Number(dx) || 0)
       const y = origin.y + Math.round(Number(dy) || 0)
       const z = origin.z + Math.round(Number(dz) || 0)
@@ -133,11 +159,27 @@ class Builder {
     return `built ${name} at ${safeOrigin.x},${safeOrigin.y},${safeOrigin.z} using ${result.material}; ${result.done} blocks`
   }
 
+  buildBox (origin, material, width, height, depth, hollow = false) {
+    const safeOrigin = this.validateOrigin(origin)
+    const shape = boxOffsets(width, height, depth, Boolean(hollow))
+    const result = this.runSetblocks(safeOrigin, material, shape)
+    this.memory.rememberBuild({
+      kind: hollow ? 'hollow_box' : 'box',
+      origin: safeOrigin,
+      material: result.material,
+      blocks: result.done,
+      width: Math.round(Number(width)),
+      height: Math.round(Number(height)),
+      depth: Math.round(Number(depth))
+    })
+    return `built ${hollow ? 'hollow ' : ''}box ${width}x${height}x${depth} at ${safeOrigin.x},${safeOrigin.y},${safeOrigin.z}; ${result.done} blocks`
+  }
+
   buildShape (origin, material, blocks) {
     if (!Array.isArray(blocks)) throw new Error('blocks must be an array of [dx,dy,dz]')
     const safe = blocks
       .filter(v => Array.isArray(v) && v.length >= 3)
-      .slice(0, Math.min(200, this.config.maxBlocks))
+      .slice(0, this.config.maxBlocks)
     const safeOrigin = this.validateOrigin(origin)
     const result = this.runSetblocks(safeOrigin, material, safe)
     this.memory.rememberBuild({
