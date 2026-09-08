@@ -1,5 +1,5 @@
 {
-  "name": "minecraftbot-ronja-agent",
+  "name": "minecraftbot-eva-agent",
   "version": "2.0.0",
   "private": true,
   "description": "Autonomous embodied Minecraft AI agent powered by a local Qwen OpenAI-compatible endpoint",
