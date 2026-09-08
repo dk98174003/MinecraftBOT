@@ -1,6 +1,6 @@
 # Architecture
 
-Ronja is deliberately split into a small set of components instead of one large script.
+Eva is deliberately split into a small set of components instead of one large script.
 
 ```text
 Minecraft 26.2
@@ -44,14 +44,14 @@ snapshot and may return only whitelisted actions:
 
 ## Why movement and building use different mechanisms
 
-The avatar moves using Mineflayer control states, so Ronja actually walks through
+The avatar moves using Mineflayer control states, so Eva actually walks through
 the world instead of being teleported for normal navigation.
 
 Building uses RCON `setblock` commands. This is intentional for this particular
 Minecraft 26.2 server: the custom protocol fork has historically required a
 packet-mapping patch for `placeBlock`, while RCON building is reliable. The
 builder is constrained by a block whitelist, maximum block count, and maximum
-distance from Ronja's current body.
+distance from Eva's current body.
 
 ## Memory
 
@@ -61,5 +61,5 @@ and build records. It is intentionally local and is ignored by Git.
 ## Failure model
 
 Each action returns a concrete result. Failed actions are recorded in
-`lastActionResult` and fed back to Qwen on the next cycle. Ronja is instructed
+`lastActionResult` and fed back to Qwen on the next cycle. Eva is instructed
 not to claim success until the action layer reports success.
