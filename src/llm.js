@@ -58,7 +58,7 @@ class LlmClient {
       body: JSON.stringify({
         model,
         temperature: this.config.temperature,
-        max_tokens: 1400,
+        max_tokens: this.config.maxTokens,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: JSON.stringify(state) }
