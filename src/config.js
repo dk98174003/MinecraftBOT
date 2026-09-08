@@ -30,7 +30,7 @@ module.exports = {
   mc: {
     host: process.env.MC_HOST || '127.0.0.1',
     port: intEnv('MC_PORT', 25565, 1, 65535),
-    username: process.env.MC_USERNAME || 'Ronja',
+    username: process.env.MC_USERNAME || 'Eva',
     auth: process.env.MC_AUTH || 'offline',
     version: process.env.MC_VERSION || '26.2'
   },
