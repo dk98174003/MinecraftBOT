@@ -49,6 +49,9 @@ module.exports = {
     admins: new Set(csv(process.env.AGENT_ADMIN_USERS || 'dk98174003')),
     home: point(process.env.HOME_POSITION, { x: 54, y: 108, z: 34 })
   },
+  world: {
+    creativeForAll: boolEnv('CREATIVE_FOR_ALL', true)
+  },
   movement: {
     maxSeconds: intEnv('MOVE_MAX_SECONDS', 8, 1, 30),
     stepMs: intEnv('MOVE_STEP_MS', 250, 100, 1000),
