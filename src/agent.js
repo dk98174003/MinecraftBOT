@@ -19,6 +19,8 @@ class AutonomousAgent {
     this.busy = false
     this.timer = null
     this.chat = []
+    this.pendingReplies = []
+    this.cycleRequested = false
     this.lastAction = 'spawned'
     this.goal = 'Stay safe, explore, interact naturally with players, and improve the world with useful builds.'
     this.seenMessages = new Map()
@@ -34,7 +36,9 @@ You operate continuously even when no player is talking to you. Make small usefu
 Behavior:
 - Friendly, curious, practical, independent, and concise.
 - Respond in the player's language. Danish is common, but follow the language actually used.
-- Do not spam chat. You do not need to answer conversations that are clearly between other players.
+- When state.replyRequired is present, answering that player is your highest priority. Include a chat action that directly responds to their message before optional movement or building actions.
+- Never silently ignore state.replyRequired. Normal background conversation may be ignored only when replyRequired is null.
+- Do not spam chat.
 - Do not grief, destroy player structures, clear inventories, attack players, or modify distant areas.
 - Prefer walking over teleportation. Walking is real Mineflayer movement.
 - Building uses trusted RCON setblock commands, but origins are distance-limited around your current body.
@@ -73,7 +77,13 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
   stop () {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    this.cycleRequested = false
     this.movement.stop()
+  }
+
+  requestCycle () {
+    this.cycleRequested = true
+    setTimeout(() => this.cycle(), 50)
   }
 
   canAdmin (username) {
@@ -90,8 +100,11 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
     this.seenMessages.set(signature, now)
     if (now - last < 800) return false
 
-    this.chat.push({ username, message: text, source, at: new Date().toISOString() })
+    const item = { username, message: text, source, at: new Date().toISOString() }
+    this.chat.push(item)
     this.chat = this.chat.slice(-this.config.agent.maxHistory)
+    this.pendingReplies.push(item)
+    this.pendingReplies = this.pendingReplies.slice(-10)
     this.memory.rememberPlayer(username, text)
     return true
   }
@@ -135,7 +148,7 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
     if (command === 'start' || command === 'resume') {
       this.enabled = true
       await this.say('Autonomous mode resumed.')
-      setTimeout(() => this.cycle(), 100)
+      this.requestCycle()
       return true
     }
 
@@ -148,6 +161,8 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
       currentGoal: this.goal,
       lastActionResult: this.lastAction,
       recentChat: this.chat.slice(-14),
+      replyRequired: this.pendingReplies[0] || null,
+      pendingReplyCount: this.pendingReplies.length,
       memory: this.memory.context(),
       homePosition: this.config.agent.home,
       capabilities: {
@@ -217,27 +232,61 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
   }
 
   async cycle () {
-    if (!this.enabled || this.busy || !this.bot.entity) return
+    if (!this.enabled || !this.bot.entity) return
+    if (this.busy) {
+      this.cycleRequested = true
+      return
+    }
+
     this.busy = true
+    this.cycleRequested = false
+    const replyRequired = this.pendingReplies[0] || null
 
     try {
-      const decision = await this.llm.decide(this.systemPrompt(), this.state())
+      const state = this.state()
+      const decision = await this.llm.decide(this.systemPrompt(), state)
       if (decision?.goal) this.goal = cleanText(decision.goal, 240)
 
-      const actions = Array.isArray(decision?.actions)
+      let actions = Array.isArray(decision?.actions)
         ? decision.actions.slice(0, this.config.agent.maxActions)
         : []
 
+      if (replyRequired && !actions.some(action => action?.type === 'chat')) {
+        try {
+          const retry = await this.llm.decide(
+            `${this.systemPrompt()}\n\nCRITICAL: A player is waiting for a reply. Return at least one chat action that directly answers state.replyRequired.message.`,
+            state
+          )
+          const chatAction = Array.isArray(retry?.actions)
+            ? retry.actions.find(action => action?.type === 'chat' && cleanText(action?.message, 240))
+            : null
+          if (chatAction) actions.unshift(chatAction)
+        } catch (error) {
+          console.error('[agent] reply retry failed:', cleanText(error.message, 300))
+        }
+      }
+
+      if (replyRequired && !actions.some(action => action?.type === 'chat')) {
+        actions.unshift({ type: 'chat', message: `${replyRequired.username}, I heard you.` })
+      }
+
+      actions = actions.slice(0, this.config.agent.maxActions)
       if (!actions.length) actions.push({ type: 'wait', seconds: 1 })
 
       const results = []
+      let replied = false
       for (const action of actions) {
         try {
           const result = await this.perform(action)
           results.push({ type: action.type, ok: true, result })
+          if (action.type === 'chat') replied = true
         } catch (error) {
           results.push({ type: action?.type || 'unknown', ok: false, error: cleanText(error.message, 250) })
         }
+      }
+
+      if (replyRequired && replied && this.pendingReplies[0] === replyRequired) {
+        this.pendingReplies.shift()
       }
 
       this.lastAction = JSON.stringify(results).slice(0, 1400)
@@ -247,6 +296,10 @@ Only use these action types. Omit origin for build_preset to build a few blocks 
       console.error('[agent]', error)
     } finally {
       this.busy = false
+      if (this.enabled && (this.cycleRequested || this.pendingReplies.length > 0)) {
+        this.cycleRequested = false
+        setTimeout(() => this.cycle(), 100)
+      }
     }
   }
 }
