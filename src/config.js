@@ -38,13 +38,14 @@ module.exports = {
     baseUrl: (process.env.LLM_BASE_URL || 'http://192.168.0.65:8000/v1').replace(/\/+$/, ''),
     model: process.env.LLM_MODEL || 'qwen38-27b',
     apiKey: process.env.LLM_API_KEY || 'EMPTY',
-    timeoutMs: intEnv('LLM_TIMEOUT_MS', 60000, 5000, 180000),
-    temperature: numEnv('LLM_TEMPERATURE', 0.45, 0, 2)
+    timeoutMs: intEnv('LLM_TIMEOUT_MS', 120000, 5000, 300000),
+    maxTokens: intEnv('LLM_MAX_TOKENS', 4096, 512, 16384),
+    temperature: numEnv('LLM_TEMPERATURE', 0.35, 0, 2)
   },
   agent: {
     autonomous: boolEnv('AGENT_AUTONOMOUS', true),
     tickMs: intEnv('AGENT_TICK_MS', 5000, 2500, 60000),
-    maxActions: intEnv('AGENT_MAX_ACTIONS', 4, 1, 8),
+    maxActions: intEnv('AGENT_MAX_ACTIONS', 6, 1, 10),
     maxHistory: intEnv('AGENT_MAX_HISTORY', 24, 8, 80),
     admins: new Set(csv(process.env.AGENT_ADMIN_USERS || 'dk98174003')),
     home: point(process.env.HOME_POSITION, { x: 54, y: 108, z: 34 })
@@ -67,7 +68,7 @@ module.exports = {
       '/data/minecraft_data/server.properties,/data/server.properties,/server.properties,/minecraft/server.properties')
   },
   build: {
-    maxBlocks: intEnv('BUILD_MAX_BLOCKS', 600, 10, 2000),
-    maxDistance: intEnv('BUILD_MAX_DISTANCE', 32, 8, 128)
+    maxBlocks: intEnv('BUILD_MAX_BLOCKS', 1200, 10, 4000),
+    maxDistance: intEnv('BUILD_MAX_DISTANCE', 48, 8, 128)
   }
 }
