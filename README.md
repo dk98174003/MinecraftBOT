@@ -1,6 +1,6 @@
-# MinecraftBOT — Ronja autonomous AI agent
+# MinecraftBOT — Eva autonomous AI agent
 
-Ronja is an autonomous female Minecraft character that lives inside the
+Eva is an autonomous female Minecraft character that lives inside the
 Minecraft world, walks around with a real Mineflayer body, talks to players,
 remembers useful facts, and builds structures.
 
@@ -23,7 +23,7 @@ needs to be recovered.
 
 ## Capabilities
 
-Ronja can:
+Eva can:
 
 - operate continuously without a human driver;
 - listen to normal player chat and decide when to respond;
@@ -49,7 +49,7 @@ Additional guardrails include:
 - no destructive/griefing action exposed to the model;
 - build block whitelist;
 - maximum build size;
-- builds must be close to Ronja's physical position;
+- builds must be close to Eva's physical position;
 - movement has per-action time and drop-safety limits;
 - administrative pause/resume commands can be restricted to named users.
 
@@ -90,7 +90,7 @@ that is still a Mineflayer 4.37.1-based build. `scripts/bootstrap.sh` verifies
 this after installation so an incompatible Mineflayer release is not used by
 mistake.
 
-The current server is offline-mode, so the default username is `Ronja` with
+The current server is offline-mode, so the default username is `Eva` with
 `MC_AUTH=offline`.
 
 ## Install on RPI5CM
@@ -124,7 +124,7 @@ Important defaults in `.env.example`:
 ```dotenv
 MC_HOST=127.0.0.1
 MC_PORT=25565
-MC_USERNAME=Ronja
+MC_USERNAME=Eva
 MC_AUTH=offline
 MC_VERSION=26.2
 
@@ -147,7 +147,7 @@ the known `server.properties` locations for `rcon.password`.
 
 ## How autonomy works
 
-Every planning cycle Ronja gives Qwen a compact state containing:
+Every planning cycle Eva gives Qwen a compact state containing:
 
 - position, health, food, time, and weather;
 - nearby visible players;
@@ -161,22 +161,24 @@ Every planning cycle Ronja gives Qwen a compact state containing:
 Qwen returns a JSON plan of at most a few actions. The runtime validates and
 executes them, then the result becomes input to the next cycle.
 
-Player messages accelerate the next planning cycle, but Ronja does not depend on
+Player messages accelerate the next planning cycle, but Eva does not depend on
 messages to act. When nobody is talking, she can still wander, build, or pursue
 her own current goal.
 
 ## In-game commands
 
+The command prefix follows `MC_USERNAME`. With the default username `Eva`:
+
 ```text
-!ronja status
-!ronja pause
-!ronja start
+!eva status
+!eva pause
+!eva start
 ```
 
-Normal interaction requires no command. Players can simply talk to Ronja:
+Normal interaction requires no command. Players can simply talk to Eva:
 
 ```text
-Ronja, come over here.
+Eva, come over here.
 Can you build a small tower beside me?
 What are you doing?
 Go explore the courtyard.
@@ -184,10 +186,10 @@ Go explore the courtyard.
 
 ## Character / girl skin
 
-The AI persona is Ronja. The visible Minecraft skin is controlled separately by
-the account/server skin mechanism. On this offline-mode server, keep the
-username `Ronja` and assign the desired girl skin through the server-side skin
-setup.
+The AI persona follows `MC_USERNAME`; the default is Eva. The visible Minecraft
+skin is controlled separately by the account/server skin mechanism. On this
+offline-mode server, keep the username `Eva` and assign the desired girl skin
+through the server-side skin setup.
 
 ## More documentation
 
