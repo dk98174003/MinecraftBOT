@@ -75,7 +75,7 @@ function create () {
   bot.on('death', () => {
     agent.lastAction = 'died; waiting for respawn'
     movement.stop()
-    console.warn('[minecraft] Ronja died')
+    console.warn(`[minecraft] ${bot.username || config.mc.username} died`)
   })
 
   bot.on('kicked', reason => console.error('[minecraft] kicked:', reason))
