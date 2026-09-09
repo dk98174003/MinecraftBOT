@@ -43,7 +43,7 @@ function parseTarget (text) {
 
 function parsePristineDump (text) {
   const parsed = JSON.parse(text)
-  let packets = parsed.packets || parsed.entries || parsed
+  const packets = parsed.packets || parsed.entries || parsed
   if (!Array.isArray(packets)) throw new Error('pristine dump JSON must contain a packets/entries array')
   return packets.map((packet, index) => {
     if (typeof packet === 'string') return { id: index, name: packet, normalized: normalizeName(packet) }
@@ -55,8 +55,8 @@ function parsePristineDump (text) {
 }
 
 // Levenshtein-style sequence alignment. Insert/delete cost 1; substitution 2,
-// which strongly prefers exposing phantom entries instead of relabeling every
-// subsequent packet after an insertion.
+// which strongly prefers exposing phantom/missing entries instead of relabeling
+// every subsequent packet after an insertion.
 function align (pristine, target) {
   const n = pristine.length
   const m = target.length
@@ -74,7 +74,8 @@ function align (pristine, target) {
         { cost: dp[i - 1][j] + 1, kind: 'extra' },
         { cost: dp[i][j - 1] + 1, kind: 'missing' }
       ]
-      choices.sort((a, b) => a.cost - b.cost || ['match', 'extra', 'missing', 'replace'].indexOf(a.kind) - ['match', 'extra', 'missing', 'replace'].indexOf(b.kind))
+      const priority = ['match', 'extra', 'missing', 'replace']
+      choices.sort((a, b) => a.cost - b.cost || priority.indexOf(a.kind) - priority.indexOf(b.kind))
       dp[i][j] = choices[0].cost
       op[i][j] = choices[0].kind
     }
@@ -130,12 +131,15 @@ function main () {
   const target = parseTarget(fs.readFileSync(targetFile, 'utf8'))
   const result = align(pristine, target)
   const summary = summarize(result)
+  const netDelta = pristine.length - target.length
+  const alignedDelta = summary.extra.length - summary.missing.length
 
   if (json) {
     console.log(JSON.stringify({
       pristineCount: pristine.length,
       targetCount: target.length,
-      cost: result.cost,
+      netDelta,
+      alignmentCost: result.cost,
       extra: summary.extra,
       missing: summary.missing,
       replaced: summary.replaced,
@@ -143,7 +147,7 @@ function main () {
       rows: result.rows
     }, null, 2))
   } else {
-    console.log(`pristine=${pristine.length} target=${target.length} alignmentCost=${result.cost}`)
+    console.log(`pristine=${pristine.length} target=${target.length} netDelta=${netDelta} alignmentCost=${result.cost}`)
     for (const row of result.rows) {
       if (row.kind !== 'match') console.log(formatRow(row))
     }
@@ -151,10 +155,8 @@ function main () {
     if (summary.firstDiff) console.log(`first divergence: ${formatRow(summary.firstDiff)}`)
   }
 
-  // For the currently observed defect the clean result must be exactly one
-  // extra pristine entry (68 vs 67) unless new evidence says otherwise.
-  if (pristine.length === 68 && target.length === 67 && summary.extra.length !== 1) {
-    console.error(`WARNING: expected one extra pristine packet from counts alone, alignment found ${summary.extra.length}; inspect replacements/missing entries before patching.`)
+  if (alignedDelta !== netDelta) {
+    console.error(`INTERNAL ERROR: alignment delta ${alignedDelta} does not equal packet-count delta ${netDelta}`)
     process.exitCode = 2
   }
 }
