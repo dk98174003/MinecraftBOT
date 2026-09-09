@@ -23,3 +23,4 @@ jobs:
           node --check src/movement.js
           node --check src/rcon.js
           node --check src/world.js
+          node --check scripts/test-blueprints.js
