@@ -26,7 +26,9 @@ jobs:
           node --check src/rcon.js
           node --check src/world.js
           node --check scripts/dump-play-protocol.js
+          node --check scripts/patch-26.2-protocol.js
           node --check scripts/verify-26.2-registry.js
+          node --check scripts/verify-26.2-registry-69.js
           node --check scripts/verify-26.2-blockpos.js
           node --check scripts/diff-26.2-mappers.js
           node --check scripts/test-26.2-wire-tools.js
