@@ -22,9 +22,9 @@ sudo systemctl restart minecraftbot.service
 sudo systemctl status minecraftbot.service
 ```
 
-`bootstrap.sh` now reapplies and verifies the vanilla-776 minecraft-data tail
-after every fresh `npm install`. A reinstall of the custom fork must therefore
-not silently restore the known off-by-one `block_place` mapping.
+`bootstrap.sh` deliberately leaves installed `minecraft-data` protocol files
+untouched. The previous automatic `vanilla-776` patch was based on Minecraft
+26.1 data and must not be applied to the 26.2 server.
 
 Logs:
 
@@ -117,46 +117,75 @@ If Eva cannot reach targets because the custom server has a slightly different
 interaction distance, tune `BUILD_REACH` conservatively. The configured range is
 also checked against actual post-walk distance before placement.
 
-## Protocol validation
+## Minecraft 26.2 protocol validation
 
-Physical construction requires the custom fork's Mineflayer `bot.placeBlock`
-path. The repository now encodes the known vanilla-776 invariants for the raw
-minecraft-data document:
-
-```text
-0x3f arm_animation
-0x40 spectate
-0x41 test_instance_block_action
-0x42 block_place
-0x43 use_item
-0x44 custom_click_action
-```
-
-The `packet_common_custom_click_action` schema must also remain:
+The authoritative Minecraft 26.2 play-state serverbound registry was extracted
+from the actual server binary, including the interleaved common packet types.
+Its confirmed decimal/hex tail is:
 
 ```text
-id  = string
-nbt = optional anonymous NBT
+54 0x36 SET_CREATIVE_MODE_SLOT
+55 0x37 SET_GAME_RULE
+56 0x38 SET_JIGSAW_BLOCK
+57 0x39 SET_STRUCTURE_BLOCK
+58 0x3a SET_TEST_BLOCK
+59 0x3b SIGN_UPDATE
+60 0x3c SPECTATOR_ACTION
+61 0x3d SWING
+62 0x3e TELEPORT_TO_ENTITY
+63 0x3f TEST_INSTANCE_BLOCK_ACTION
+64 0x40 USE_ITEM_ON
+65 0x41 USE_ITEM
+66 0x42 CUSTOM_CLICK_ACTION
 ```
 
-Apply and verify the installed data manually with:
+`USE_ITEM_ON` is the server packet used for block placement and is wire ID
+`0x40` in 26.2. Do not reuse the Minecraft 26.1/vanilla-776 tail where
+`block_place` was assumed to be `0x42`.
+
+Mojang server packet names and Prismarine internal packet names are not always
+identical. For example, Mineflayer may still call the internal packet
+`block_place` while its protocol mapper assigns it to the server's `USE_ITEM_ON`
+wire slot. Therefore the exact pristine 26.2 mapper and schema must be inspected
+before changing Mineflayer code.
+
+### Dump the installed pristine mapper
+
+The repository includes a read-only diagnostic tool. It never modifies
+`protocol.json`:
 
 ```bash
-npm run patch:protocol
-npm run verify:protocol
-npm run test:protocol
+npm run dump:protocol
 ```
 
-The patcher understands the raw document root used on disk and is idempotent. It
-also supports the older wrapper shape defensively, but it fails loudly if the
-packet tail or `custom_click_action` schema is neither the known broken form nor
-the known vanilla-776 form.
-
-If auto-discovery cannot locate the exact installed file, set it explicitly:
+For machine-readable output suitable for comparing with the decompiled server
+registry:
 
 ```bash
-MINECRAFT_DATA_PROTOCOL_JSON=/absolute/path/to/protocol.json npm run patch:protocol
+npm run dump:protocol -- --json
 ```
+
+To inspect one known pristine protocol file directly:
+
+```bash
+npm run dump:protocol -- /absolute/path/to/protocol.json
+```
+
+or:
+
+```bash
+MINECRAFT_DATA_PROTOCOL_JSON=/absolute/path/to/protocol.json npm run dump:protocol -- --json
+```
+
+The dump includes the complete `play.toServer` mapper, decimal and hexadecimal
+wire IDs, the params type for each packet, and focused schemas for the tail and
+for `block_place`, `use_item`, and `custom_click_action` when present.
+
+The next protocol task is to compare that complete pristine mapper with the
+67-entry server registry, identify the two phantom entries before the tail, and
+then construct a corrected 26.2 mapper. The real 26.2 `UseItemOn` payload schema
+and server handler must also be derived from the 26.2 server decompilation before
+we alter `_genericPlace()` or introduce any packet compatibility shim.
 
 Do not re-enable `setblock` as a silent fallback; that would make Eva appear
 stationary again and hide a protocol defect.
