@@ -40,15 +40,17 @@ fi
 cd "$ROOT"
 npm install
 
-# Do not mutate minecraft-data here. The previous vanilla-776 patch was based
-# on Minecraft 26.1 and is not authoritative for the Minecraft 26.2 server.
-# Protocol work must be derived from the actual 26.2 server registry and tested
-# against a pristine fork before any replacement mapper is applied.
+# Minecraft 26.2 protocol 776 has 69 play-serverbound registrations. The
+# pristine fork is missing teleport_to_entity at wire 0x40, which shifts the
+# tail and incorrectly emits block_place at 0x41. Apply the exact-signature,
+# idempotent correction after install so block_place/use_item_on is 0x42.
+npm run patch:26.2-protocol
 npm run verify:mineflayer
 npm run check
 npm test
 
 echo
 echo "Bootstrap complete."
-echo "Protocol data was left untouched. Use 'npm run dump:protocol -- --json' to inspect the installed play-serverbound mapper."
+echo "Minecraft 26.2 protocol tail correction was validated: block_place/use_item_on=0x42."
+echo "Use 'npm run dump:protocol -- --json' to inspect the installed play-serverbound mapper."
 echo "Copy .env.example to .env, review the values, then run: npm start"
