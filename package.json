@@ -1,6 +1,6 @@
 {
   "name": "minecraftbot-eva-agent",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "private": true,
   "description": "Autonomous embodied Minecraft AI agent powered by a local Qwen OpenAI-compatible endpoint",
   "main": "src/index.js",
