@@ -1,33 +1,40 @@
 # Architecture
 
-Eva is deliberately split into a small set of components instead of one large script.
+Eva is split into planning, world-state, movement and physical action layers.
 
 ```text
 Minecraft 26.2
      │
-     │ Mineflayer custom fork
+     │ custom Mineflayer 4.37.1-based fork
      ▼
  src/index.js
      │
-     ├── chat/message events ─────────────┐
-     │                                    │
-     ▼                                    ▼
- src/world.js                       src/agent.js
-  world snapshot                    autonomous loop
-                                          │
-                    ┌─────────────────────┼───────────────────┐
-                    ▼                     ▼                   ▼
-              src/llm.js           src/movement.js      src/building.js
-              Qwen planner         real walking          RCON builds
-                    │                                         │
-                    ▼                                         ▼
-      192.168.0.65:8000/v1                         docker rcon-cli
+     ├── chat/message events ──────────────┐
+     │                                     │
+     ▼                                     ▼
+ src/world.js                        src/agent.js
+ compact world snapshot             autonomous Qwen loop
+                                           │
+                     ┌─────────────────────┼──────────────────────┐
+                     ▼                     ▼                      ▼
+               src/llm.js           src/movement.js        src/building.js
+               Qwen planner         real walking           physical placement
+                                                               │
+                                             equip item + bot.placeBlock
+                                                               │
+                                                               ▼
+                                                        Minecraft world
+
+RCON is side-channel support only:
+- Creative-mode server policy
+- optional /give material provisioning
+- fallback tellraw if normal bot chat fails
 ```
 
 ## Planner contract
 
-The LLM never receives arbitrary code execution. It receives a compact JSON world
-snapshot and may return only whitelisted actions:
+The model never receives arbitrary code execution. It receives a compact JSON
+world snapshot and may return only whitelisted actions:
 
 - `chat`
 - `walk_to`
@@ -35,31 +42,82 @@ snapshot and may return only whitelisted actions:
 - `wander`
 - `look_at_player`
 - `jump`
+- `build_house`
+- `build_watchtower`
 - `build_preset`
+- `build_box`
 - `build_shape`
 - `remember`
 - `wait`
 
-`src/agent.js` validates the action type before dispatching it.
+`src/agent.js` validates and dispatches these actions.
 
-## Why movement and building use different mechanisms
+## Embodied building
 
-The avatar moves using Mineflayer control states, so Eva actually walks through
-the world instead of being teleported for normal navigation.
+`src/building.js` is intentionally not a world-edit wrapper. The physical
+placement pipeline is:
 
-Building uses RCON `setblock` commands. This is intentional for this particular
-Minecraft 26.2 server: the custom protocol fork has historically required a
-packet-mapping patch for `placeBlock`, while RCON building is reliable. The
-builder is constrained by a block whitelist, maximum block count, and maximum
-distance from Eva's current body.
+1. create a validated blueprint;
+2. reject oversized/distant plans;
+3. check the target block and avoid overwriting substantial existing blocks;
+4. find an adjacent non-air reference block;
+5. walk Eva into placement range;
+6. obtain/equip the material;
+7. call Mineflayer `bot.placeBlock(reference, face)`;
+8. verify the target block appeared;
+9. retry temporarily unsupported blocks in later passes.
 
-## Memory
+The optional RCON provisioning path may execute `/give Eva <block> 64` when an
+item is missing. It never executes `setblock` or `fill` for construction.
 
-`agent-memory.json` stores small persistent facts, player last-seen information,
-and build records. It is intentionally local and is ignored by Git.
+## Semantic structures
+
+A semantic blueprint encodes architecture rather than asking the LLM to emit
+hundreds of coordinates.
+
+`build_house` creates:
+
+- wood floor;
+- hollow walls;
+- centered two-block doorway;
+- windows;
+- corner posts;
+- roof overhang;
+- raised roof ridge;
+- interior lighting.
+
+`build_watchtower` creates a compact fortification tower with deck and
+battlements.
+
+Large solid boxes are rejected so a generic cuboid cannot accidentally become
+a “house”.
+
+## Autonomy
+
+Player messages trigger an immediate planning cycle. Without messages, the
+normal timer continues. The prompt asks Qwen to pursue useful physical actions
+rather than generating random structures. If repeated idle plans contain no
+movement/build action, the runtime injects a small wander action after the
+configured idle-cycle threshold.
+
+Only one build action is executed per planning cycle, preventing accidental
+duplicate construction requests.
+
+## Memory and feedback
+
+`agent-memory.json` stores notes, player last-seen information and build records.
+Build records include `mode: physical_mineflayer` and placement statistics.
+
+Each action result is written to `lastActionResult` and fed back to Qwen. Build
+status is also included in the world snapshot while a long physical build is in
+progress.
 
 ## Failure model
 
-Each action returns a concrete result. Failed actions are recorded in
-`lastActionResult` and fed back to Qwen on the next cycle. Eva is instructed
-not to claim success until the action layer reports success.
+A placement that cannot be confirmed is reported as failed. Unsupported targets
+are retried in later passes. The builder tolerates a small number of local
+failures, but aborts the semantic action when too much of the structure could
+not be physically completed.
+
+There is deliberately no hidden RCON construction fallback: protocol or
+placement regressions remain visible and debuggable.

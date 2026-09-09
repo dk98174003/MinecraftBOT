@@ -68,7 +68,7 @@ function create () {
   const llm = new LlmClient(config.llm)
   const memory = new MemoryStore()
   const movement = new MovementController(bot, config.movement)
-  const builder = new Builder(bot, rcon, config.build, memory)
+  const builder = new Builder(bot, rcon, config.build, memory, movement)
   const agent = new AutonomousAgent({ bot, config, llm, rcon, movement, builder, memory })
 
   active = { bot, agent }
