@@ -1,57 +1,110 @@
-# MinecraftBOT — Eva autonomous AI agent
+# MinecraftBOT — Eva autonomous embodied AI
 
-Eva is an autonomous female Minecraft character that lives inside the
-Minecraft world, walks around with a real Mineflayer body, talks to players,
-remembers useful facts, and builds structures.
+Eva is an autonomous female Minecraft character connected to the local Qwen
+service. She has a real Mineflayer body: she walks, turns, chats, equips blocks,
+and now **physically places construction blocks herself**.
 
-Her planner is the local Qwen service at:
+Qwen endpoint:
 
 ```text
 http://192.168.0.65:8000/v1
 ```
 
-The default model is `qwen38-27b`, configurable in `.env`.
+Default model: `qwen38-27b`.
 
-## What changed
+## Current design
 
-This repository is now one coherent agent rather than a collection of
-experimental bots and one-off RCON build scripts.
+The runtime intentionally separates thinking from acting:
 
-The old `bot26/` experiments and `rcon-agents/` utilities were removed from the
-current tree. Their history remains available in Git if an old build script ever
-needs to be recovered.
+1. `src/world.js` gives Qwen a compact snapshot of the visible world.
+2. `src/agent.js` asks Qwen for a small JSON action plan.
+3. `src/movement.js` moves Eva's actual Mineflayer avatar.
+4. `src/building.js` converts approved structures into a block-placement plan.
+5. Eva walks into reach, equips each material, and calls Mineflayer
+   `placeBlock` for every block.
+6. Results are fed back into the next Qwen planning cycle.
 
-## Capabilities
+RCON is no longer a construction engine. It may still enforce Creative mode,
+provide fallback `tellraw`, and optionally run `/give Eva ...` to provision
+materials. There is no `setblock` or `fill` construction path in the builder.
 
-Eva can:
+## What Eva can do
 
 - operate continuously without a human driver;
-- listen to normal player chat and decide when to respond;
+- listen and respond to normal player chat;
 - physically walk toward coordinates or visible players;
-- wander and explore autonomously;
+- wander when she has been idle for too long;
 - look at players and jump over simple obstacles;
-- use persistent local memory across restarts;
-- build small platforms, walls, towers, huts, bridges, and LLM-defined shapes;
-- report action failures back to Qwen and adapt on the next planning cycle;
+- remember useful facts and recent builds across restarts;
+- build physical platforms, walls and bridges;
+- build a real cottage blueprint with floor, hollow walls, doorway, windows,
+  structural corner trim, roof overhang, roof ridge and lighting;
+- build a watchtower blueprint with doorway, windows, top deck and battlements;
+- reject large solid cuboids so a request such as “build a house” cannot silently
+  turn into a massive 7x7 stone cube;
+- report movement or placement failures to Qwen and adapt on a later cycle;
 - reconnect automatically after disconnects.
 
-Building uses RCON because it is the most reliable construction path on the
-custom Minecraft 26.2 server. Normal movement is not teleport-based: the
-Mineflayer avatar actually walks.
+## Semantic building
+
+For recognizable structures, Qwen is instructed to use semantic build actions
+instead of trying to invent geometry from one giant box.
+
+### House
+
+`build_house` defaults to a 7x7 `stone_cottage` with wall height 3. Supported
+styles are:
+
+- `stone_cottage`
+- `oak_cottage`
+- `spruce_cottage`
+
+The runtime keeps the interior hollow and reserves a centered two-block-high
+doorway. A 7x7 default house currently contains 209 planned blocks.
+
+### Watchtower
+
+`build_watchtower` creates a compact castle/fortification tower with a floor,
+hollow walls, doorway, windows, deck, battlements and light.
+
+### Generic boxes
+
+`build_box` remains available for construction primitives such as a floor,
+foundation, beam, short wall segment or hollow room. Large solid 3-D boxes are
+rejected by the runtime.
+
+## Physical placement behavior
+
+Before placing a block Eva:
+
+- checks that the target is empty or only contains safe vegetation;
+- refuses to overwrite substantial existing blocks;
+- finds a real neighboring reference block;
+- walks into Mineflayer placement range;
+- equips the requested material in her hand;
+- calls `bot.placeBlock(...)`;
+- verifies that the expected block appeared in the world.
+
+Unsupported blocks are retried in later placement passes so roofs and other
+parts can use blocks placed earlier in the same build as support.
+
+For semantic houses/towers Eva also chooses a nearby reasonably flat site when
+an explicit origin was not supplied.
 
 ## Safety boundaries
 
-Qwen is **not** allowed to execute shell commands or arbitrary JavaScript.
-It chooses from a fixed action contract enforced by `src/agent.js`.
+Qwen cannot execute shell commands or arbitrary JavaScript. It can only choose
+from the action contract enforced in `src/agent.js`.
 
-Additional guardrails include:
+Guardrails include:
 
-- no destructive/griefing action exposed to the model;
-- build block whitelist;
-- maximum build size;
-- builds must be close to Eva's physical position;
-- movement has per-action time and drop-safety limits;
-- administrative pause/resume commands can be restricted to named users.
+- no attack/grief/destructive world-edit action exposed to Qwen;
+- building block whitelist;
+- maximum build size and distance;
+- refusal to overwrite substantial existing blocks;
+- refusal of large solid cuboids;
+- movement time/drop safety limits;
+- administrative pause/resume restrictions.
 
 ## Repository layout
 
@@ -62,12 +115,13 @@ src/
   llm.js         Qwen/OpenAI-compatible API client
   world.js       compact Minecraft world snapshot
   movement.js    embodied walking/jump/navigation primitives
-  building.js    guarded RCON builder and presets
-  rcon.js        safe docker/rcon-cli wrapper
+  building.js    physical Mineflayer builder + semantic blueprints
+  rcon.js        server administration / provisioning helper
   memory.js      persistent local memory
 
 scripts/
-  bootstrap.sh   installs the custom 26.2 Mineflayer fork + dependencies
+  bootstrap.sh        installs the custom 26.2 Mineflayer fork + dependencies
+  test-blueprints.js  verifies semantic house/tower geometry
 
 deploy/
   minecraftbot.service
@@ -80,94 +134,43 @@ docs/
 ## Requirements
 
 - Node.js 20+
-- **Mineflayer 4.37.1**, using the custom Minecraft 26.2 fork (`mf262.tgz`)
-- Minecraft server reachable on port 25565
-- Docker/RCON access on the Minecraft host for chat/build actions
+- Mineflayer **4.37.1-based** custom Minecraft 26.2 fork
+- Minecraft server on port 25565
 - Qwen endpoint reachable at `192.168.0.65:8000`
+- RCON recommended for Creative-mode policy and automatic material provisioning
 
-The custom package may report a build-metadata version such as `4.37.1+...`;
-that is still a Mineflayer 4.37.1-based build. `scripts/bootstrap.sh` verifies
-this after installation so an incompatible Mineflayer release is not used by
-mistake.
-
-The current server is offline-mode, so the default username is `Eva` with
-`MC_AUTH=offline`.
+The physical builder now depends on the custom fork's `bot.placeBlock` path. If
+the 26.2 protocol mapping regresses, the builder reports the failure; it does
+**not** silently fall back to `setblock`.
 
 ## Install on RPI5CM
 
 ```bash
 git clone https://github.com/dk98174003/MinecraftBOT.git
 cd MinecraftBOT
-
 cp .env.example .env
 ./scripts/bootstrap.sh
+npm run check
+npm run test:blueprints
 npm start
 ```
 
-`bootstrap.sh` automatically looks for the existing custom fork at:
+`bootstrap.sh` looks for the custom fork at:
 
 ```text
 /data/minecraft-bot26/mf262.tgz
 ```
 
-You can instead point to another copy:
+or use:
 
 ```bash
 export MINEFLAYER_FORK_TGZ=/path/to/mf262.tgz
 ./scripts/bootstrap.sh
 ```
 
-## Configuration
+## In-game control
 
-Important defaults in `.env.example`:
-
-```dotenv
-MC_HOST=127.0.0.1
-MC_PORT=25565
-MC_USERNAME=Eva
-MC_AUTH=offline
-MC_VERSION=26.2
-
-LLM_BASE_URL=http://192.168.0.65:8000/v1
-LLM_MODEL=qwen38-27b
-LLM_API_KEY=EMPTY
-
-AGENT_AUTONOMOUS=true
-AGENT_TICK_MS=5000
-AGENT_ADMIN_USERS=dk98174003
-
-RCON_ENABLED=true
-RCON_CONTAINER=minecraft
-RCON_HOST=127.0.0.1
-RCON_PORT=25575
-```
-
-Do not put passwords in Git. If `RCON_PASSWORD` is blank, the process searches
-the known `server.properties` locations for `rcon.password`.
-
-## How autonomy works
-
-Every planning cycle Eva gives Qwen a compact state containing:
-
-- position, health, food, time, and weather;
-- nearby visible players;
-- inventory summary;
-- nearby block information;
-- recent player messages;
-- persistent notes and recent builds;
-- her current goal;
-- the concrete result of her previous action.
-
-Qwen returns a JSON plan of at most a few actions. The runtime validates and
-executes them, then the result becomes input to the next cycle.
-
-Player messages accelerate the next planning cycle, but Eva does not depend on
-messages to act. When nobody is talking, she can still wander, build, or pursue
-her own current goal.
-
-## In-game commands
-
-The command prefix follows `MC_USERNAME`. With the default username `Eva`:
+With `MC_USERNAME=Eva`:
 
 ```text
 !eva status
@@ -175,21 +178,34 @@ The command prefix follows `MC_USERNAME`. With the default username `Eva`:
 !eva start
 ```
 
-Normal interaction requires no command. Players can simply talk to Eva:
+Players can just talk normally:
 
 ```text
-Eva, come over here.
-Can you build a small tower beside me?
-What are you doing?
-Go explore the courtyard.
+Eva, kom herover.
+Byg et lille hus her.
+Kan du hjælpe med et vagttårn til slottet?
+Gå en tur rundt i gården og se hvad der mangler.
 ```
 
-## Character / girl skin
+`!eva status` includes physical build progress while a build is active.
 
-The AI persona follows `MC_USERNAME`; the default is Eva. The visible Minecraft
-skin is controlled separately by the account/server skin mechanism. On this
-offline-mode server, keep the username `Eva` and assign the desired girl skin
-through the server-side skin setup.
+## Configuration
+
+See `.env.example`. Important building settings include:
+
+```dotenv
+BUILD_MAX_BLOCKS=1200
+BUILD_MAX_DISTANCE=48
+BUILD_REACH=4.2
+BUILD_PLACEMENT_DELAY_MS=90
+BUILD_RCON_PROVISION=true
+```
+
+`BUILD_RCON_PROVISION=true` permits only material provisioning through RCON.
+Construction still happens through Eva's Mineflayer body.
+
+Do not commit RCON passwords. If `RCON_PASSWORD` is blank, the process searches
+configured `server.properties` paths for `rcon.password`.
 
 ## More documentation
 
