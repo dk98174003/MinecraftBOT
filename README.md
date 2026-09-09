@@ -2,7 +2,7 @@
 
 Eva is an autonomous female Minecraft character connected to the local Qwen
 service. She has a real Mineflayer body: she walks, turns, chats, equips blocks,
-and now **physically places construction blocks herself**.
+and **physically places construction blocks herself**.
 
 Qwen endpoint:
 
@@ -91,6 +91,26 @@ parts can use blocks placed earlier in the same build as support.
 For semantic houses/towers Eva also chooses a nearby reasonably flat site when
 an explicit origin was not supplied.
 
+## Minecraft 26.2 protocol status
+
+The old automatic `vanilla-776` protocol patch has been disabled because it was
+based on Minecraft 26.1 data, not the actual 26.2 server registry. Bootstrap now
+leaves installed `minecraft-data` untouched.
+
+The authoritative 26.2 server binary shows `USE_ITEM_ON` (block placement) at
+wire `0x40`, followed by `USE_ITEM` at `0x41` and `CUSTOM_CLICK_ACTION` at
+`0x42`. The exact Prismarine packet names and the two phantom entries in the
+pristine fork mapper are still being reconciled against that server registry.
+
+Use the read-only mapper dumper to inspect the installed fork without modifying
+it:
+
+```bash
+npm run dump:protocol -- --json
+```
+
+See `docs/OPERATIONS.md` for the confirmed tail and protocol-debugging workflow.
+
 ## Safety boundaries
 
 Qwen cannot execute shell commands or arbitrary JavaScript. It can only choose
@@ -120,8 +140,11 @@ src/
   memory.js      persistent local memory
 
 scripts/
-  bootstrap.sh        installs the custom 26.2 Mineflayer fork + dependencies
-  test-blueprints.js  verifies semantic house/tower geometry
+  bootstrap.sh             installs the custom 26.2 Mineflayer fork + dependencies
+  dump-play-protocol.js    read-only play-serverbound mapper/schema diagnostic
+  test-blueprints.js       verifies semantic house/tower geometry
+  test-protocol-dump.js    verifies protocol-dump parsing without modifying data
+  test-reference-policy.js verifies safe placement-reference selection
 
 deploy/
   minecraftbot.service
@@ -139,9 +162,9 @@ docs/
 - Qwen endpoint reachable at `192.168.0.65:8000`
 - RCON recommended for Creative-mode policy and automatic material provisioning
 
-The physical builder now depends on the custom fork's `bot.placeBlock` path. If
-the 26.2 protocol mapping regresses, the builder reports the failure; it does
-**not** silently fall back to `setblock`.
+The physical builder depends on the custom fork's `bot.placeBlock` path. If the
+26.2 protocol mapping is wrong, the builder reports the failure; it does **not**
+silently fall back to `setblock`.
 
 ## Install on RPI5CM
 
