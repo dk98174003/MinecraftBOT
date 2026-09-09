@@ -22,16 +22,21 @@ class AutonomousAgent {
     this.pendingReplies = []
     this.cycleRequested = false
     this.lastAction = 'spawned'
-    this.goal = 'Stay safe, explore, interact naturally with players, and improve the world with useful builds.'
+    this.goal = 'Stay useful: move through the world, help nearby players, and improve places carefully when there is a clear purpose.'
     this.seenMessages = new Map()
+    this.idleCycles = 0
   }
 
   systemPrompt () {
     const name = this.bot.username || this.config.mc.username || 'Eva'
     return `You are ${name}, an autonomous female AI character physically embodied in a Minecraft Java 26.2 world.
-Your brain is a local Qwen model, but speak as ${name} rather than as an assistant.
+Your brain is a local Qwen model, but speak and act as ${name}, a character inside Minecraft, not as a text assistant.
 
-You operate continuously even when no player is talking to you. Make small useful decisions: walk around, inspect nearby players, socialize when appropriate, and build useful structures. You may initiate actions yourself.
+Embodiment is mandatory:
+- Your body must visibly do the work. Walking uses Mineflayer controls and building uses Mineflayer block placement.
+- Never assume RCON teleports or builds for you. RCON may only support server administration, styled fallback chat, or put materials into your inventory.
+- When building, the runtime walks you around the site, equips the material in your hand, and places each block through the Minecraft client.
+- Prefer walking to the player/site before helping. Do not stand still for repeated idle cycles unless there is a concrete reason.
 
 Behavior:
 - Friendly, curious, practical, independent, and concise.
@@ -40,21 +45,26 @@ Behavior:
 - Never silently ignore state.replyRequired. Normal background conversation may be ignored only when replyRequired is null.
 - Do not spam chat.
 - Do not grief, destroy player structures, clear inventories, attack players, or modify distant areas.
-- Prefer walking over teleportation. Walking is real Mineflayer movement.
-- Building uses trusted RCON commands, but origins are distance-limited around your current body.
-- If a movement/build action fails, adapt on the next cycle rather than pretending it succeeded.
-- Stay alive: avoid unsafe drops and do not deliberately enter lava/water hazards.
+- If a movement/build action fails, read lastActionResult and adapt instead of pretending it succeeded.
+- Stay alive: avoid unsafe drops and do not deliberately enter lava or dangerous water routes.
 - Use memory for facts worth keeping across restarts.
-- Keep plans incremental. Maximum ${this.config.agent.maxActions} actions per cycle.
+- Maximum ${this.config.agent.maxActions} actions per cycle.
 
-Building strategy:
-- Prefer build_box over build_shape whenever the structure can be described as rectangular geometry.
-- build_box can make floors, walls, columns, roofs and rooms. A floor is height=1; a wall can be depth=1; a column can be width=1 and depth=1.
-- hollow=true makes only the outer shell, useful for rooms and houses. hollow=false makes a solid cuboid.
-- A larger structure should be split into several simple build_box actions across cycles: foundation, walls/shell, roof, then details.
-- Use build_shape only for irregular details that cannot be represented by boxes.
-- Reuse the same nearby origin system and remember what was already built instead of restarting the design every cycle.
-- If a player asks for a substantial build, acknowledge them in chat, set the goal to the requested build, and begin construction rather than only describing what you could do.
+Autonomy strategy:
+- If nobody needs a reply and you have no active build, do something physically useful: walk toward a relevant player, explore a nearby area, return toward a useful location, or continue a clear goal.
+- Do not create random buildings just to appear busy. Build when a player asks, when your current goal clearly calls for it, or when the structure solves an obvious local need.
+- For help requests, acknowledge briefly, move to the requested area/player if needed, then act.
+
+Building rules:
+- For a HOUSE, always use build_house. Do NOT approximate a house with one large build_box.
+- build_house creates an actual architectural blueprint: wood floor, hollow walls, centered two-block doorway, glass windows, corner trim, overhanging roof, roof ridge, and interior lanterns.
+- Good default house size is 7x7 with wallHeight=3. Use 9x7 for a larger home. Keep dimensions odd so doors/windows remain symmetric.
+- For a CASTLE or fortification task, use build_watchtower for a real tower, and simple hollow boxes/walls only for individual wall segments or foundations.
+- build_watchtower creates a floor, hollow stone walls, doorway, windows, top deck, battlements, and lighting.
+- build_box is a construction primitive, not a complete design. Use it for floors (height=1), short wall segments, foundations, beams, or hollow rooms. Large solid cuboids are rejected by the runtime.
+- build_shape is only for small irregular details.
+- The builder will refuse to overwrite substantial existing blocks. If a site is obstructed or uneven, walk to a better nearby site rather than forcing the build.
+- A semantic build may take time because every block is physically placed. One build action is enough; do not duplicate it in the same cycle.
 
 Return exactly one JSON object and no prose:
 {
@@ -67,15 +77,17 @@ Return exactly one JSON object and no prose:
     {"type":"wander","radius":10},
     {"type":"look_at_player","player":"PlayerName"},
     {"type":"jump"},
-    {"type":"build_preset","name":"platform|wall|tower|hut|bridge","material":"cobblestone","origin":{"x":0,"y":99,"z":0}},
-    {"type":"build_box","material":"stone_bricks","origin":{"x":0,"y":99,"z":0},"width":7,"height":4,"depth":7,"hollow":true},
-    {"type":"build_shape","material":"stone_bricks","origin":{"x":0,"y":99,"z":0},"blocks":[[0,0,0],[1,0,0]]},
+    {"type":"build_house","style":"stone_cottage|oak_cottage|spruce_cottage","width":7,"depth":7,"wallHeight":3,"front":"north|south|east|west","origin":{"x":0,"y":100,"z":0}},
+    {"type":"build_watchtower","size":7,"wallHeight":3,"origin":{"x":0,"y":100,"z":0}},
+    {"type":"build_preset","name":"platform|wall|tower|hut|bridge","material":"cobblestone","origin":{"x":0,"y":100,"z":0}},
+    {"type":"build_box","material":"stone_bricks","origin":{"x":0,"y":100,"z":0},"width":7,"height":1,"depth":7,"hollow":false},
+    {"type":"build_shape","material":"stone_bricks","origin":{"x":0,"y":100,"z":0},"blocks":[[0,0,0],[1,0,0]]},
     {"type":"remember","note":"fact worth retaining"},
     {"type":"wait","seconds":2}
   ]
 }
 
-Only use these action types. Omit origin for build_preset or build_box to build beside your current position.`
+Omit origin on build_house/build_watchtower to let the runtime choose the best nearby flat site. Omit origin on simple builds to build beside your current position.`
   }
 
   start () {
@@ -123,13 +135,17 @@ Only use these action types. Omit origin for build_preset or build_box to build 
     const clean = cleanText(message, 240)
     if (!clean) return 'empty chat message'
 
-    try {
-      this.rcon.say(this.bot.username || this.config.mc.username || 'Eva', clean)
-    } catch (error) {
-      if (typeof this.bot.chat !== 'function') throw error
-      this.bot.chat(clean)
+    if (typeof this.bot.chat === 'function') {
+      try {
+        this.bot.chat(clean)
+        return `said in Minecraft chat: ${clean}`
+      } catch (error) {
+        console.warn('[agent] bot.chat failed, trying RCON fallback:', cleanText(error.message, 200))
+      }
     }
-    return `said: ${clean}`
+
+    this.rcon.say(this.bot.username || this.config.mc.username || 'Eva', clean)
+    return `said through RCON fallback: ${clean}`
   }
 
   async command (username, message) {
@@ -139,7 +155,9 @@ Only use these action types. Omit origin for build_preset or build_box to build 
 
     const command = text.split(/\s+/)[1] || 'status'
     if (command === 'status') {
-      await this.say(`auto=${this.enabled ? 'on' : 'off'} | goal: ${this.goal}`)
+      const build = this.builder.status()
+      const buildText = build ? ` | build ${build.kind}: ${build.done ?? build.placed ?? 0}/${build.total ?? '?'}` : ''
+      await this.say(`auto=${this.enabled ? 'on' : 'off'} | goal: ${this.goal}${buildText}`)
       return true
     }
 
@@ -170,6 +188,7 @@ Only use these action types. Omit origin for build_preset or build_box to build 
     return worldState(this.bot, {
       currentGoal: this.goal,
       lastActionResult: this.lastAction,
+      currentBuild: this.builder.status(),
       recentChat: this.chat.slice(-14),
       replyRequired: this.pendingReplies[0] || null,
       pendingReplyCount: this.pendingReplies.length,
@@ -179,7 +198,11 @@ Only use these action types. Omit origin for build_preset or build_box to build 
         walking: true,
         chat: true,
         autonomous: true,
-        building: this.config.rcon.enabled,
+        building: true,
+        buildMode: 'physical_mineflayer',
+        rconPlacesBlocks: false,
+        rconMayProvisionInventory: this.config.build.provisionWithRcon && this.config.rcon.enabled,
+        semanticBuilds: ['house', 'watchtower'],
         buildPresets: ['platform', 'wall', 'tower', 'hut', 'bridge'],
         buildPrimitives: ['box', 'shape'],
         maxBuildBlocks: this.config.build.maxBlocks,
@@ -196,9 +219,7 @@ Only use these action types. Omit origin for build_preset or build_box to build 
         return this.say(action.message)
 
       case 'walk_to':
-        return this.movement.walkTo({
-          x: action.x, y: action.y, z: action.z
-        }, action.range)
+        return this.movement.walkTo({ x: action.x, y: action.y, z: action.z }, action.range)
 
       case 'walk_to_player':
         return this.movement.walkToPlayer(cleanText(action.player, 64), action.range)
@@ -216,6 +237,23 @@ Only use these action types. Omit origin for build_preset or build_box to build 
 
       case 'jump':
         return this.movement.jump()
+
+      case 'build_house':
+        return this.builder.buildHouse({
+          origin: action.origin || null,
+          style: cleanText(action.style, 40).toLowerCase() || 'stone_cottage',
+          width: action.width ?? 7,
+          depth: action.depth ?? 7,
+          wallHeight: action.wallHeight ?? 3,
+          front: cleanText(action.front, 12).toLowerCase() || 'south'
+        })
+
+      case 'build_watchtower':
+        return this.builder.buildWatchtower({
+          origin: action.origin || null,
+          size: action.size ?? 7,
+          wallHeight: action.wallHeight ?? 3
+        })
 
       case 'build_preset':
         return this.builder.buildPreset(
@@ -252,6 +290,26 @@ Only use these action types. Omit origin for build_preset or build_box to build 
       default:
         throw new Error(`unsupported action: ${type}`)
     }
+  }
+
+  ensurePhysicalActivity (actions, replyRequired) {
+    const physicalTypes = new Set([
+      'walk_to', 'walk_to_player', 'wander', 'jump',
+      'build_house', 'build_watchtower', 'build_preset', 'build_box', 'build_shape'
+    ])
+    const hasPhysical = actions.some(action => physicalTypes.has(action?.type))
+
+    if (hasPhysical) {
+      this.idleCycles = 0
+      return actions
+    }
+
+    this.idleCycles++
+    if (!replyRequired && this.idleCycles >= this.config.agent.maxIdleCycles && actions.length < this.config.agent.maxActions) {
+      this.idleCycles = 0
+      return [...actions, { type: 'wander', radius: 8 }]
+    }
+    return actions
   }
 
   async cycle () {
@@ -294,17 +352,25 @@ Only use these action types. Omit origin for build_preset or build_box to build 
       }
 
       actions = actions.slice(0, this.config.agent.maxActions)
+      actions = this.ensurePhysicalActivity(actions, replyRequired).slice(0, this.config.agent.maxActions)
       if (!actions.length) actions.push({ type: 'wait', seconds: 1 })
 
       const results = []
       let replied = false
+      let buildStarted = false
       for (const action of actions) {
         try {
+          if (buildStarted && String(action?.type || '').startsWith('build_')) {
+            results.push({ type: action.type, ok: false, error: 'skipped duplicate build action in the same cycle' })
+            continue
+          }
+          if (String(action?.type || '').startsWith('build_')) buildStarted = true
+
           const result = await this.perform(action)
           results.push({ type: action.type, ok: true, result })
           if (action.type === 'chat') replied = true
         } catch (error) {
-          results.push({ type: action?.type || 'unknown', ok: false, error: cleanText(error.message, 250) })
+          results.push({ type: action?.type || 'unknown', ok: false, error: cleanText(error.message, 350) })
         }
       }
 
@@ -312,10 +378,10 @@ Only use these action types. Omit origin for build_preset or build_box to build 
         this.pendingReplies.shift()
       }
 
-      this.lastAction = JSON.stringify(results).slice(0, 2200)
+      this.lastAction = JSON.stringify(results).slice(0, 3200)
       console.log('[agent]', cleanText(decision?.thought, 500), results)
     } catch (error) {
-      this.lastAction = `agent cycle error: ${cleanText(error.message, 400)}`
+      this.lastAction = `agent cycle error: ${cleanText(error.message, 500)}`
       console.error('[agent]', error)
     } finally {
       this.busy = false
