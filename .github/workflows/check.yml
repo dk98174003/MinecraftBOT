@@ -28,6 +28,7 @@ jobs:
           node --check scripts/dump-play-protocol.js
           node --check scripts/verify-26.2-registry.js
           node --check scripts/verify-26.2-blockpos.js
+          node --check scripts/diff-26.2-mappers.js
           node --check scripts/test-26.2-wire-tools.js
           node --check scripts/test-blueprints.js
           node --check scripts/test-protocol-dump.js
