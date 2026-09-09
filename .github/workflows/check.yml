@@ -26,6 +26,9 @@ jobs:
           node --check src/rcon.js
           node --check src/world.js
           node --check scripts/dump-play-protocol.js
+          node --check scripts/verify-26.2-registry.js
+          node --check scripts/verify-26.2-blockpos.js
+          node --check scripts/test-26.2-wire-tools.js
           node --check scripts/test-blueprints.js
           node --check scripts/test-protocol-dump.js
           node --check scripts/test-reference-policy.js
@@ -33,3 +36,4 @@ jobs:
         run: |
           node scripts/test-protocol-dump.js
           node scripts/test-reference-policy.js
+          node scripts/test-26.2-wire-tools.js
