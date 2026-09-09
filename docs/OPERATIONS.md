@@ -120,7 +120,10 @@ also checked against actual post-walk distance before placement.
 ## Minecraft 26.2 protocol validation
 
 The authoritative Minecraft 26.2 play-state serverbound registry was extracted
-from the actual server binary, including the interleaved common packet types.
+from the actual server binary with both `GamePacketTypes.*` and interleaved
+`CommonPacketTypes.*` registrations preserved in builder order. The completed
+chain has exactly 67 entries with contiguous wire IDs `0..66`.
+
 Its confirmed decimal/hex tail is:
 
 ```text
@@ -149,43 +152,93 @@ identical. For example, Mineflayer may still call the internal packet
 wire slot. Therefore the exact pristine 26.2 mapper and schema must be inspected
 before changing Mineflayer code.
 
-### Dump the installed pristine mapper
+### Verify the decompiled registration chain
+
+The verifier scans both packet-type prefixes in source order and deliberately
+does not deduplicate names:
+
+```bash
+npm run verify:26.2-registry -- /tmp/GameProtocols.java
+```
+
+It requires exactly 67 extracted registrations and verifies the known `60..66`
+tail. If a complete 67-entry authoritative target file is available, compare
+all entries rather than only the tail by invoking the script directly with
+`--target`:
+
+```bash
+node scripts/verify-26.2-registry.js /tmp/GameProtocols.java --target /tmp/26.2-target.txt
+```
+
+The source extraction is considered complete only when the actual chained
+builder expression contains all `GamePacketTypes.*` and `CommonPacketTypes.*`
+registrations and produces contiguous IDs `0..66`. A game-only regex is not a
+valid protocol extract because it drops the interleaved common packets.
+
+### Dump and align the pristine Prismarine mapper
 
 The repository includes a read-only diagnostic tool. It never modifies
 `protocol.json`:
 
 ```bash
-npm run dump:protocol
+npm run dump:protocol -- --json > /tmp/pristine-26.2.json
 ```
 
-For machine-readable output suitable for comparing with the decompiled server
-registry:
+Given a complete authoritative 67-entry target file, align the pristine map by
+normalized packet name:
 
 ```bash
-npm run dump:protocol -- --json
+npm run diff:26.2-mappers -- /tmp/pristine-26.2.json /tmp/26.2-target.txt
 ```
 
-To inspect one known pristine protocol file directly:
+or produce machine-readable output:
 
 ```bash
-npm run dump:protocol -- /absolute/path/to/protocol.json
+npm run diff:26.2-mappers -- /tmp/pristine-26.2.json /tmp/26.2-target.txt --json
 ```
 
-or:
+The alignment reports every extra, missing and substituted entry plus the first
+divergence. Do not infer the number of phantom packets from packet counts alone:
+for example, a 68-entry pristine map versus a 67-entry target has net `+1`, but
+could still contain two extras and one missing entry.
+
+### Prove BlockPos wire encoding from the 26.2 jar
+
+Before changing the `USE_ITEM_ON` schema, verify the actual 26.2 implementation
+of `readBlockPos` rather than relying on an older protocol version:
 
 ```bash
-MINECRAFT_DATA_PROTOCOL_JSON=/absolute/path/to/protocol.json npm run dump:protocol -- --json
+npm run verify:26.2-blockpos -- --source /tmp/FriendlyByteBuf.java
 ```
 
-The dump includes the complete `play.toServer` mapper, decimal and hexadecimal
-wire IDs, the params type for each packet, and focused schemas for the tail and
-for `block_place`, `use_item`, and `custom_click_action` when present.
+The verifier only accepts source evidence where `readBlockPos()` reads one
+64-bit `long` and passes that packed value through `BlockPos.of(...)` or
+`BlockPos.fromLong(...)`. Failure means the evidence is incomplete or the
+encoding changed; it does not automatically mean a new encoding has been found.
 
-The next protocol task is to compare that complete pristine mapper with the
-67-entry server registry, identify the two phantom entries before the tail, and
-then construct a corrected 26.2 mapper. The real 26.2 `UseItemOn` payload schema
-and server handler must also be derived from the 26.2 server decompilation before
-we alter `_genericPlace()` or introduce any packet compatibility shim.
+For a known placement coordinate, the local packer can also print the expected
+64-bit value and network bytes:
+
+```bash
+npm run verify:26.2-blockpos -- --coords 40 73 -67
+```
+
+The implemented classic layout is signed X26/Z26/Y12 in one 64-bit value. It is
+used for diagnostics only until the 26.2 decompiled source confirms it.
+
+### USE_ITEM_ON schema gate
+
+Do not patch placement yet. First decompile and trace the actual read/codec path
+for all three layers:
+
+1. `ServerboundUseItemOnPacket` — establishes top-level field order.
+2. `BlockHitResult` — establishes the nested hit-result field order and any
+   26.2-specific booleans/fields.
+3. the concrete `readBlockPos`/`BlockPos` codec — establishes exact position
+   encoding.
+
+The correction must follow decode order exactly. A field list with the right
+names but the wrong order is still wire-incompatible.
 
 Do not re-enable `setblock` as a silent fallback; that would make Eva appear
 stationary again and hide a protocol defect.
@@ -204,5 +257,5 @@ curl http://192.168.0.65:8000/v1/models
 
 ## RCON password
 
-Do not commit the password. If `RCON_PASSWORD` is empty, the process checks
+Do not commit the password. If `RCON_PASSWORD` is blank, the process checks
 configured `RCON_PROPERTIES_PATHS` for `rcon.password=`.
