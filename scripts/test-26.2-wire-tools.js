@@ -5,6 +5,7 @@ const assert = require('assert')
 const {
   EXPECTED_COUNT,
   EXPECTED_TAIL,
+  auditRegistrations,
   extractPacketChain,
   verifyRegistry
 } = require('./verify-26.2-registry')
@@ -21,14 +22,30 @@ const {
 } = require('./diff-26.2-mappers')
 
 const prefix = Array.from({ length: EXPECTED_COUNT - EXPECTED_TAIL.length }, (_, i) => `P${i}`)
-const source = [...prefix, ...EXPECTED_TAIL]
-  .map((name, i) => `${i % 5 === 0 ? 'CommonPacketTypes' : 'GamePacketTypes'}.${name}`)
-  .join('.add(')
+const expectedPackets = [...prefix, ...EXPECTED_TAIL]
+const source = expectedPackets
+  .map((name, i) => `.addPacket(${i % 5 === 0 ? 'CommonPacketTypes' : 'GamePacketTypes'}.${name}, codec${i})`)
+  .join('\n')
 
+const audit = auditRegistrations(source)
 const extracted = extractPacketChain(source)
+assert.strictEqual(audit.rawAddPacketCount, EXPECTED_COUNT)
+assert.strictEqual(audit.outliers.length, 0)
 assert.strictEqual(extracted.length, EXPECTED_COUNT)
 assert.deepStrictEqual(extracted.slice(-EXPECTED_TAIL.length), EXPECTED_TAIL)
-assert.deepStrictEqual(verifyRegistry(extracted), [])
+assert.deepStrictEqual(verifyRegistry(extracted, null, audit), [])
+
+// Prove the verifier cannot silently declare success when addPacket() contains
+// registrations outside the two known Game/Common packet-type namespaces.
+const hiddenSource = `${source}\n.addPacket(OtherPacketTypes.HIDDEN_ONE, hiddenCodec1)\n.addPacket(SPECIAL_DIRECT_TYPE, hiddenCodec2)`
+const hiddenAudit = auditRegistrations(hiddenSource)
+assert.strictEqual(hiddenAudit.rawAddPacketCount, EXPECTED_COUNT + 2)
+assert.strictEqual(hiddenAudit.recognized.length, EXPECTED_COUNT)
+assert.strictEqual(hiddenAudit.outliers.length, 2)
+const hiddenErrors = verifyRegistry(hiddenAudit.packets, null, hiddenAudit)
+assert.ok(hiddenErrors.some(error => /69/.test(error)))
+assert.ok(hiddenErrors.some(error => /OtherPacketTypes/.test(error)))
+assert.ok(hiddenErrors.some(error => /SPECIAL_DIRECT_TYPE/.test(error)))
 
 const broken = [...extracted]
 broken[64] = 'WRONG_USE_ITEM_ON'
