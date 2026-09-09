@@ -25,11 +25,11 @@ jobs:
           node --check src/reference-policy.js
           node --check src/rcon.js
           node --check src/world.js
-          node --check scripts/patch-protocol-776.js
+          node --check scripts/dump-play-protocol.js
           node --check scripts/test-blueprints.js
-          node --check scripts/test-protocol-patch.js
+          node --check scripts/test-protocol-dump.js
           node --check scripts/test-reference-policy.js
-      - name: Run dependency-free protocol regression tests
+      - name: Run dependency-free regression tests
         run: |
-          node scripts/test-protocol-patch.js
+          node scripts/test-protocol-dump.js
           node scripts/test-reference-policy.js
