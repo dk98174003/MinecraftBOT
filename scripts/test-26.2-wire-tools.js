@@ -15,6 +15,10 @@ const {
   inspectReadBlockPos,
   selfTest
 } = require('./verify-26.2-blockpos')
+const {
+  align,
+  summarize
+} = require('./diff-26.2-mappers')
 
 const prefix = Array.from({ length: EXPECTED_COUNT - EXPECTED_TAIL.length }, (_, i) => `P${i}`)
 const source = [...prefix, ...EXPECTED_TAIL]
@@ -56,5 +60,19 @@ public BlockPos readBlockPos() {
 }
 `
 assert.strictEqual(inspectReadBlockPos(wrongSource).ok, false)
+
+function row (id, name) {
+  return { id, name, normalized: name }
+}
+
+const targetRows = ['A', 'B', 'C', 'D', 'E', 'F'].map((name, id) => row(id, name))
+const pristineRows = ['A', 'X', 'B', 'C', 'Y', 'E', 'F'].map((name, id) => row(id, name))
+const alignment = align(pristineRows, targetRows)
+const alignmentSummary = summarize(alignment)
+assert.strictEqual(pristineRows.length - targetRows.length, 1)
+assert.strictEqual(alignmentSummary.extra.length - alignmentSummary.missing.length, 1)
+assert.strictEqual(alignmentSummary.extra.length, 2)
+assert.strictEqual(alignmentSummary.missing.length, 1)
+assert.strictEqual(alignmentSummary.replaced.length, 0)
 
 console.log('26.2 wire verifier tests OK')
