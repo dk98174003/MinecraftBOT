@@ -40,13 +40,14 @@ module.exports = {
     apiKey: process.env.LLM_API_KEY || 'EMPTY',
     timeoutMs: intEnv('LLM_TIMEOUT_MS', 120000, 5000, 300000),
     maxTokens: intEnv('LLM_MAX_TOKENS', 4096, 512, 16384),
-    temperature: numEnv('LLM_TEMPERATURE', 0.35, 0, 2)
+    temperature: numEnv('LLM_TEMPERATURE', 0.30, 0, 2)
   },
   agent: {
     autonomous: boolEnv('AGENT_AUTONOMOUS', true),
     tickMs: intEnv('AGENT_TICK_MS', 5000, 2500, 60000),
     maxActions: intEnv('AGENT_MAX_ACTIONS', 6, 1, 10),
     maxHistory: intEnv('AGENT_MAX_HISTORY', 24, 8, 80),
+    maxIdleCycles: intEnv('AGENT_MAX_IDLE_CYCLES', 2, 1, 10),
     admins: new Set(csv(process.env.AGENT_ADMIN_USERS || 'dk98174003')),
     home: point(process.env.HOME_POSITION, { x: 54, y: 108, z: 34 })
   },
@@ -54,8 +55,8 @@ module.exports = {
     creativeForAll: boolEnv('CREATIVE_FOR_ALL', true)
   },
   movement: {
-    maxSeconds: intEnv('MOVE_MAX_SECONDS', 8, 1, 30),
-    stepMs: intEnv('MOVE_STEP_MS', 250, 100, 1000),
+    maxSeconds: intEnv('MOVE_MAX_SECONDS', 10, 1, 30),
+    stepMs: intEnv('MOVE_STEP_MS', 200, 100, 1000),
     maxDrop: intEnv('MOVE_MAX_DROP', 3, 1, 8)
   },
   rcon: {
@@ -69,6 +70,13 @@ module.exports = {
   },
   build: {
     maxBlocks: intEnv('BUILD_MAX_BLOCKS', 1200, 10, 4000),
-    maxDistance: intEnv('BUILD_MAX_DISTANCE', 48, 8, 128)
+    maxDistance: intEnv('BUILD_MAX_DISTANCE', 48, 8, 128),
+    reach: numEnv('BUILD_REACH', 4.2, 3.0, 5.0),
+    moveRange: numEnv('BUILD_MOVE_RANGE', 1.1, 1.0, 2.5),
+    moveMaxSeconds: intEnv('BUILD_MOVE_MAX_SECONDS', 8, 2, 30),
+    placementDelayMs: intEnv('BUILD_PLACEMENT_DELAY_MS', 90, 40, 500),
+    maxPlacementPasses: intEnv('BUILD_MAX_PLACEMENT_PASSES', 5, 2, 10),
+    minSiteScore: numEnv('BUILD_MIN_SITE_SCORE', 0.72, 0.4, 1),
+    provisionWithRcon: boolEnv('BUILD_RCON_PROVISION', true)
   }
 }
