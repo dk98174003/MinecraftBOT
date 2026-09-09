@@ -2,8 +2,6 @@
 
 ## Target host
 
-The current deployment is designed for the RPI5CM Minecraft host:
-
 - Minecraft Java custom version: `26.2`
 - Mineflayer base version: `4.37.1` using the custom 26.2 fork
 - Minecraft port: `25565`
@@ -12,31 +10,15 @@ The current deployment is designed for the RPI5CM Minecraft host:
 - RCON port: `25575`
 - Qwen OpenAI-compatible API: `http://192.168.0.65:8000/v1`
 
-## First deployment
+## Deploy / update
 
 ```bash
-cd /data
-git clone https://github.com/dk98174003/MinecraftBOT.git MinecraftBOT
-cd MinecraftBOT
-
-cp .env.example .env
+cd /data/MinecraftBOT
+git pull
 ./scripts/bootstrap.sh
-npm start
-```
-
-The bootstrap script looks for the existing custom Mineflayer tarball at
-`/data/minecraft-bot26/mf262.tgz`. You can also set `MINEFLAYER_FORK_TGZ`.
-After `npm install`, bootstrap verifies that the installed Mineflayer package
-version starts with `4.37.1` before continuing.
-
-## systemd
-
-Review `deploy/minecraftbot.service`, especially `WorkingDirectory`, then:
-
-```bash
-sudo cp deploy/minecraftbot.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now minecraftbot.service
+npm run check
+npm run test:blueprints
+sudo systemctl restart minecraftbot.service
 sudo systemctl status minecraftbot.service
 ```
 
@@ -46,21 +28,9 @@ Logs:
 journalctl -u minecraftbot.service -f
 ```
 
-Restart after pulling an update:
-
-```bash
-cd /data/MinecraftBOT
-git pull
-npm run check
-sudo systemctl restart minecraftbot.service
-```
-
 ## In-game control
 
-Normal player chat is context for the autonomous agent.
-
-The administrative command prefix is derived from `MC_USERNAME`. With
-`MC_USERNAME=Eva`:
+With `MC_USERNAME=Eva`:
 
 ```text
 !eva status
@@ -68,45 +38,99 @@ The administrative command prefix is derived from `MC_USERNAME`. With
 !eva start
 ```
 
-Users allowed to pause/resume autonomy are configured with
-`AGENT_ADMIN_USERS`.
+`!eva status` reports the current autonomous goal and active physical build
+progress.
 
-## RCON password
+## Physical builder verification
 
-Do not commit the password.
+After deployment, test on an empty flat Creative area with a simple request:
 
-If `RCON_PASSWORD` is empty, the process reads the first `rcon.password=` entry
-from the configured `RCON_PROPERTIES_PATHS`. Set `RCON_PASSWORD` in `.env` only
-when automatic discovery is not possible.
-
-## Health checks
-
-LLM:
-
-```bash
-curl http://192.168.0.65:8000/v1/models
+```text
+Eva, byg et lille 7x7 hus her.
 ```
 
-Mineflayer package:
+Expected behavior:
+
+1. Eva acknowledges the player.
+2. Eva moves around the build area.
+3. Blocks appear one at a time from Eva's client rather than instantly through
+   world-edit commands.
+4. The result has a wooden floor, hollow interior, doorway, windows and roof.
+5. Logs show `[builder]` placement details only on skips/failures.
+
+A successful default house uses 209 planned blocks. Use `!eva status` during the
+build to see progress.
+
+## RCON role
+
+RCON remains enabled for:
+
+- setting default/online players to Creative mode;
+- optional material provisioning with `/give Eva ...`;
+- fallback styled chat if `bot.chat` fails.
+
+The physical builder must never use `setblock` or `fill`. `BUILD_RCON_PROVISION`
+controls only the `/give` behavior.
+
+To disable material provisioning:
+
+```dotenv
+BUILD_RCON_PROVISION=false
+```
+
+When disabled, Eva must already have the required blocks in inventory.
+
+## Building tuning
+
+Useful settings:
+
+```dotenv
+BUILD_MAX_BLOCKS=1200
+BUILD_MAX_DISTANCE=48
+BUILD_REACH=4.2
+BUILD_MOVE_RANGE=1.1
+BUILD_MOVE_MAX_SECONDS=8
+BUILD_PLACEMENT_DELAY_MS=90
+BUILD_MAX_PLACEMENT_PASSES=5
+BUILD_MIN_SITE_SCORE=0.72
+```
+
+If the server needs more time to confirm placements, increase
+`BUILD_PLACEMENT_DELAY_MS` to e.g. `150` or `200` before changing other logic.
+
+If Eva cannot reach targets because the custom server has a slightly different
+interaction distance, tune `BUILD_REACH` conservatively. The configured range is
+also checked against actual post-walk distance before placement.
+
+## Protocol validation
+
+Physical construction now requires the custom fork's Mineflayer
+`bot.placeBlock` path. This was deliberately changed from the old RCON builder.
+
+If you see repeated errors such as:
+
+```text
+Mineflayer placeBlock API is unavailable
+placement was not confirmed as <material>
+```
+
+or protocol packet errors immediately when placement starts, verify the custom
+26.2 Mineflayer packet mapping. Do not re-enable `setblock` as a silent fallback;
+it would make Eva appear stationary again and hide the protocol defect.
+
+Mineflayer package check:
 
 ```bash
 npm run verify:mineflayer
 ```
 
-Minecraft process:
+## LLM health
 
 ```bash
-systemctl status minecraftbot.service
-journalctl -u minecraftbot.service -n 100 --no-pager
+curl http://192.168.0.65:8000/v1/models
 ```
 
-## Protocol note
+## RCON password
 
-The custom Minecraft 26.2 fork based on **Mineflayer 4.37.1** is required to
-connect to this server. A package version such as `4.37.1+complexity...` is
-expected and is treated as a 4.37.1-based build.
-
-This agent does not call `bot.placeBlock`, so the historical `block_place`
-packet-mapper workaround is not part of the runtime path. If physical
-inventory-based placement is added later, re-test the custom protocol mapping
-before enabling it.
+Do not commit the password. If `RCON_PASSWORD` is empty, the process checks
+configured `RCON_PROPERTIES_PATHS` for `rcon.password=`.
