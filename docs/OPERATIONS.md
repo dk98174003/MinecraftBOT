@@ -119,12 +119,19 @@ also checked against actual post-walk distance before placement.
 
 ## Minecraft 26.2 protocol validation
 
-The authoritative Minecraft 26.2 play-state serverbound registry was extracted
-from the actual server binary with both `GamePacketTypes.*` and interleaved
-`CommonPacketTypes.*` registrations preserved in builder order. The completed
-chain has exactly 67 entries with contiguous wire IDs `0..66`.
+The authoritative Minecraft 26.2 play-state serverbound packet names were
+extracted from the actual server binary with both `GamePacketTypes.*` and
+interleaved `CommonPacketTypes.*` references preserved in source order. That
+name extraction yields 67 entries with the confirmed tail below.
 
-Its confirmed decimal/hex tail is:
+A later raw-call audit found **69 `addPacket(...)` calls** in the builder
+expression, so the stronger claim that every registration has been accounted for
+is intentionally held open until the two non-Game/Common calls are classified.
+The verifier now audits every `addPacket(...)` call and fails if any call cannot
+be mapped to one of the two known packet-type namespaces. Do not call the full
+registry proof airtight while those outliers remain unexplained.
+
+The confirmed decimal/hex tail from the 67 named registrations is:
 
 ```text
 54 0x36 SET_CREATIVE_MODE_SLOT
@@ -143,8 +150,8 @@ Its confirmed decimal/hex tail is:
 ```
 
 `USE_ITEM_ON` is the server packet used for block placement and is wire ID
-`0x40` in 26.2. Do not reuse the Minecraft 26.1/vanilla-776 tail where
-`block_place` was assumed to be `0x42`.
+`0x40` in the proven named chain. Do not reuse the Minecraft 26.1/vanilla-776
+tail where `block_place` was assumed to be `0x42`.
 
 Mojang server packet names and Prismarine internal packet names are not always
 identical. For example, Mineflayer may still call the internal packet
@@ -152,28 +159,38 @@ identical. For example, Mineflayer may still call the internal packet
 wire slot. Therefore the exact pristine 26.2 mapper and schema must be inspected
 before changing Mineflayer code.
 
-### Verify the decompiled registration chain
+### Verify every decompiled registration call
 
-The verifier scans both packet-type prefixes in source order and deliberately
-does not deduplicate names:
+Run the verifier on the decompiled builder source:
 
 ```bash
 npm run verify:26.2-registry -- /tmp/GameProtocols.java
 ```
 
-It requires exactly 67 extracted registrations and verifies the known `60..66`
-tail. If a complete 67-entry authoritative target file is available, compare
-all entries rather than only the tail by invoking the script directly with
-`--target`:
+The verifier does two independent things:
+
+1. it extracts packet names from `GamePacketTypes.*` and `CommonPacketTypes.*`
+   in builder order and checks the known 67-entry chain/tail;
+2. it separately scans every raw `addPacket(...)` call and reports any first
+   argument that is not exactly one recognized packet-type reference.
+
+With the current 69-vs-67 discrepancy the command should fail and print the two
+outlier calls. Use JSON output when collecting evidence:
 
 ```bash
-node scripts/verify-26.2-registry.js /tmp/GameProtocols.java --target /tmp/26.2-target.txt
+node scripts/verify-26.2-registry.js /tmp/GameProtocols.java --json
 ```
 
-The source extraction is considered complete only when the actual chained
-builder expression contains all `GamePacketTypes.*` and `CommonPacketTypes.*`
-registrations and produces contiguous IDs `0..66`. A game-only regex is not a
-valid protocol extract because it drops the interleaved common packets.
+If a complete authoritative 67-entry target file is available, compare all
+known named entries too:
+
+```bash
+node scripts/verify-26.2-registry.js /tmp/GameProtocols.java --target /tmp/26.2-target.txt --json
+```
+
+Do not remove or ignore the two outliers merely to make the count green. They
+must be shown to be non-wire-registration helpers/duplicates, or incorporated
+into the authoritative chain if they really allocate packet IDs.
 
 ### Dump and align the pristine Prismarine mapper
 
@@ -257,5 +274,5 @@ curl http://192.168.0.65:8000/v1/models
 
 ## RCON password
 
-Do not commit the password. If `RCON_PASSWORD` is blank, the process checks
+Do not commit the password. If `RCON_PASSWORD` is empty, the process checks
 configured `RCON_PROPERTIES_PATHS` for `rcon.password=`.
