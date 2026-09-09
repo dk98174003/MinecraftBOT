@@ -22,6 +22,10 @@ sudo systemctl restart minecraftbot.service
 sudo systemctl status minecraftbot.service
 ```
 
+`bootstrap.sh` now reapplies and verifies the vanilla-776 minecraft-data tail
+after every fresh `npm install`. A reinstall of the custom fork must therefore
+not silently restore the known off-by-one `block_place` mapping.
+
 Logs:
 
 ```bash
@@ -60,6 +64,17 @@ Expected behavior:
 
 A successful default house uses 209 planned blocks. Use `!eva status` during the
 build to see progress.
+
+## Placement reference policy
+
+Eva must place against a real structural reference block. The physical builder
+rejects `leaf_litter`, grass/fern decorations, carpet, rails, torches, snow
+layers, buttons, pressure plates and other thin shapes as placement anchors.
+Collision geometry is also checked so a nominally non-air decorative block does
+not become the reference for `bot.placeBlock()`.
+
+For protocol isolation tests, use a target air block directly above a normal
+stone, cobblestone, dirt or grass block.
 
 ## RCON role
 
@@ -104,19 +119,47 @@ also checked against actual post-walk distance before placement.
 
 ## Protocol validation
 
-Physical construction now requires the custom fork's Mineflayer
-`bot.placeBlock` path. This was deliberately changed from the old RCON builder.
-
-If you see repeated errors such as:
+Physical construction requires the custom fork's Mineflayer `bot.placeBlock`
+path. The repository now encodes the known vanilla-776 invariants for the raw
+minecraft-data document:
 
 ```text
-Mineflayer placeBlock API is unavailable
-placement was not confirmed as <material>
+0x3f arm_animation
+0x40 spectate
+0x41 test_instance_block_action
+0x42 block_place
+0x43 use_item
+0x44 custom_click_action
 ```
 
-or protocol packet errors immediately when placement starts, verify the custom
-26.2 Mineflayer packet mapping. Do not re-enable `setblock` as a silent fallback;
-it would make Eva appear stationary again and hide the protocol defect.
+The `packet_common_custom_click_action` schema must also remain:
+
+```text
+id  = string
+nbt = optional anonymous NBT
+```
+
+Apply and verify the installed data manually with:
+
+```bash
+npm run patch:protocol
+npm run verify:protocol
+npm run test:protocol
+```
+
+The patcher understands the raw document root used on disk and is idempotent. It
+also supports the older wrapper shape defensively, but it fails loudly if the
+packet tail or `custom_click_action` schema is neither the known broken form nor
+the known vanilla-776 form.
+
+If auto-discovery cannot locate the exact installed file, set it explicitly:
+
+```bash
+MINECRAFT_DATA_PROTOCOL_JSON=/absolute/path/to/protocol.json npm run patch:protocol
+```
+
+Do not re-enable `setblock` as a silent fallback; that would make Eva appear
+stationary again and hide a protocol defect.
 
 Mineflayer package check:
 

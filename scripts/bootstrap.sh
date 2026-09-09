@@ -39,8 +39,17 @@ fi
 
 cd "$ROOT"
 npm install
+
+# Fresh installs of the custom fork can restore an off-by-one minecraft-data
+# tail. Patch the raw protocol document and then verify the vanilla-776
+# invariants before Eva is allowed to start physical block placement.
+npm run patch:protocol
+npm run verify:protocol
+
 npm run verify:mineflayer
 npm run check
+npm run test:protocol
+npm run test:reference
 
 echo
 echo "Bootstrap complete."

@@ -7,7 +7,7 @@ const { Rcon } = require('./rcon')
 const { LlmClient } = require('./llm')
 const { MemoryStore } = require('./memory')
 const { MovementController } = require('./movement')
-const { Builder } = require('./building')
+const { PhysicalBuilder } = require('./physical-builder')
 const { AutonomousAgent } = require('./agent')
 
 let active = null
@@ -68,7 +68,7 @@ function create () {
   const llm = new LlmClient(config.llm)
   const memory = new MemoryStore()
   const movement = new MovementController(bot, config.movement)
-  const builder = new Builder(bot, rcon, config.build, memory, movement)
+  const builder = new PhysicalBuilder(bot, rcon, config.build, memory, movement)
   const agent = new AutonomousAgent({ bot, config, llm, rcon, movement, builder, memory })
 
   active = { bot, agent }

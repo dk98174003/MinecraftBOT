@@ -21,6 +21,15 @@ jobs:
           node --check src/llm.js
           node --check src/memory.js
           node --check src/movement.js
+          node --check src/physical-builder.js
+          node --check src/reference-policy.js
           node --check src/rcon.js
           node --check src/world.js
+          node --check scripts/patch-protocol-776.js
           node --check scripts/test-blueprints.js
+          node --check scripts/test-protocol-patch.js
+          node --check scripts/test-reference-policy.js
+      - name: Run dependency-free protocol regression tests
+        run: |
+          node scripts/test-protocol-patch.js
+          node scripts/test-reference-policy.js
