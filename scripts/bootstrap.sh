@@ -40,17 +40,15 @@ fi
 cd "$ROOT"
 npm install
 
-# Fresh installs of the custom fork can restore an off-by-one minecraft-data
-# tail. Patch the raw protocol document and then verify the vanilla-776
-# invariants before Eva is allowed to start physical block placement.
-npm run patch:protocol
-npm run verify:protocol
-
+# Do not mutate minecraft-data here. The previous vanilla-776 patch was based
+# on Minecraft 26.1 and is not authoritative for the Minecraft 26.2 server.
+# Protocol work must be derived from the actual 26.2 server registry and tested
+# against a pristine fork before any replacement mapper is applied.
 npm run verify:mineflayer
 npm run check
-npm run test:protocol
-npm run test:reference
+npm test
 
 echo
 echo "Bootstrap complete."
+echo "Protocol data was left untouched. Use 'npm run dump:protocol -- --json' to inspect the installed play-serverbound mapper."
 echo "Copy .env.example to .env, review the values, then run: npm start"
