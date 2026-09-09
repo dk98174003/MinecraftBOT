@@ -150,18 +150,45 @@ function collectProtocolFiles (rootDir) {
   return results
 }
 
+function addExistingRoot (roots, candidate) {
+  try {
+    if (fs.statSync(candidate).isDirectory()) roots.add(fs.realpathSync(candidate))
+  } catch {}
+}
+
 function minecraftDataRoots (repoRoot) {
   const roots = new Set()
   const explicit = process.env.MINECRAFT_DATA_PROTOCOL_JSON
   if (explicit) return { explicitFiles: explicit.split(path.delimiter).filter(Boolean), roots: [] }
 
+  // npm normally hoists minecraft-data here. Keep direct-path fallbacks because
+  // package.json exports can make require.resolve('minecraft-data/package.json')
+  // unavailable even when the package is installed correctly.
+  addExistingRoot(roots, path.join(repoRoot, 'node_modules', 'minecraft-data'))
+
   const resolveFrom = [repoRoot]
-  try { resolveFrom.push(path.dirname(require.resolve('mineflayer/package.json', { paths: [repoRoot] }))) } catch {}
+  try {
+    const mineflayerPackage = require.resolve('mineflayer/package.json', { paths: [repoRoot] })
+    const mineflayerRoot = path.dirname(mineflayerPackage)
+    resolveFrom.push(mineflayerRoot)
+    addExistingRoot(roots, path.join(mineflayerRoot, 'node_modules', 'minecraft-data'))
+  } catch {}
 
   for (const base of resolveFrom) {
     try {
       const pkg = require.resolve('minecraft-data/package.json', { paths: [base] })
       roots.add(path.dirname(pkg))
+    } catch {}
+    try {
+      const entry = require.resolve('minecraft-data', { paths: [base] })
+      let current = path.dirname(entry)
+      while (current !== path.dirname(current)) {
+        if (path.basename(current) === 'minecraft-data') {
+          addExistingRoot(roots, current)
+          break
+        }
+        current = path.dirname(current)
+      }
     } catch {}
   }
 
